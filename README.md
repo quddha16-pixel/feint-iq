@@ -69,3 +69,10 @@ Browser tests require Chromium and `ffmpeg` with libvpx. `/usr/bin/chromium` is 
 - `tests/`: Chromium workflow, responsive, report, and accessibility tests.
 
 See [implementation notes](docs/IMPLEMENTATION.md) for remaining work and validation limits.
+
+## GitHub Pages
+
+The public deployment target is https://quddha16-pixel.github.io/feint-iq/.
+Pushes to `main` run `.github/workflows/deploy-pages.yml`, which validates, builds,
+and deploys `dist/` using GitHub Actions. Production assets use the `/feint-iq/`
+base path; local development remains at `/`. See [Pages deployment instructions](docs/GITHUB-PAGES.md).
