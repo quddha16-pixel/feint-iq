@@ -43,3 +43,21 @@ Git read access or repository `admin` metadata does not establish access to ever
 ## Product scope
 
 This deploys the functional static workspace. It does not create an AI analysis backend, accounts, or cloud report storage. The existing honest engine-unavailable behavior remains in place.
+
+## Deployment attempt — 2026-11-02
+
+The application and deployment configuration were committed and pushed without force to `main` (application `ad7c637`; deployment `b87f16b`). The remote was confirmed as `https://github.com/quddha16-pixel/feint-iq.git`; its prior `main` contained only the initial README commit, so no unrelated remote work required conflict resolution.
+
+Local type checking, linting, all 21 unit tests, all 14 browser tests, and the production build passed. A production-browser smoke check confirmed HTTP 200 for HTML, JavaScript and CSS beneath `/feint-iq/`, correct navigation across all five screens, reload behavior, and no JavaScript errors.
+
+[Actions run 41547411413](https://github.com/quddha16-pixel/feint-iq/actions/runs/41547411413) successfully installed, checked, tested, built, and uploaded the Pages artifact. Deployment failed at **Configure GitHub Pages**: `Get Pages site failed ... Pages enabled and configured to build using GitHub Actions`, with HTTP 404. The deployment step was skipped. The public URL also returned HTTP 404.
+
+Enabling Pages through `POST /repos/quddha16-pixel/feint-iq/pages` with `build_type=workflow` was denied with **HTTP 403: Resource not accessible by integration**. The token also cannot read repository Actions permission settings. Repository `permissions.admin=true` metadata does not override these integration-scoped API restrictions. No credentials were extracted or saved, and no repository protections were changed.
+
+**Required action:** a repository administrator must open [Settings → Pages](https://github.com/quddha16-pixel/feint-iq/settings/pages), choose **GitHub Actions** as the build source, and rerun the failed jobs or manually dispatch **Deploy Identifier Q to GitHub Pages** on `main`. No code changes or additional client-side keys are needed. After deployment succeeds, run:
+
+```sh
+node tests/pages-smoke.mjs https://quddha16-pixel.github.io/feint-iq/
+```
+
+The application is committed and build-verified, but public deployment is not complete until that administrator action and a successful Pages run occur.

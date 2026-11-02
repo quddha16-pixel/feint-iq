@@ -17,7 +17,7 @@ Schema tests deliberately use synthetic reports. No synthetic report is accessib
 3. Publish a scoring methodology and grade scale versioning strategy; independently validate that category scores and recommendations are supportable. Verify exact competition rules, especially local/custom variations.
 4. Add account/athlete IDs, team permissions, database persistence, browser-to-cloud migration, retention and deletion controls. localStorage does not support secure multi-user isolation or concurrency conflict resolution across tabs.
 5. Validate on physical iPhones and Safari codecs, then test long-duration footage and resource budgets on target devices. Browser-local file checks are UX validation, not server security controls.
-6. Deploy the static frontend to an HTTPS host. No production infrastructure or remote service was modified by this implementation.
+6. Enable GitHub Pages with GitHub Actions as the source, then rerun the committed deployment workflow. The production asset base is `/feint-iq/`; see GITHUB-PAGES.md for the permission blocker and activation steps.
 
 ## Deliberate boundaries
 

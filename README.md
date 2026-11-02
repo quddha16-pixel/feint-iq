@@ -20,7 +20,7 @@ npm run build
 npm run dev -- --port 5173 --strictPort
 ```
 
-Deploy `dist/` through a static HTTPS host. Hash routes work without server rewrite rules. Do not use the development server for production. There is no deployment integration or infrastructure provisioned here.
+Deploy `dist/` through a static HTTPS host. Hash routes work without server rewrite rules. Do not use the development server for production. GitHub Pages deployment is configured through the Actions workflow described below.
 
 ## What works
 
