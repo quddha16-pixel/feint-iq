@@ -24,6 +24,7 @@ interface Options {
   prepare?: typeof prepareVideo;
   ttlMs?: number;
   timeoutMs?: number;
+  maxUploadBytes?: number;
 }
 interface StoredJob {
   job: AnalysisJob;
@@ -38,9 +39,17 @@ export async function createBackend(options: Options) {
     );
   if (new URL(options.origin).origin !== options.origin)
     throw new Error("FRONTEND_ORIGIN must be an exact origin without a path.");
+  const maxUploadBytes = options.maxUploadBytes ?? PILOT_LIMITS.maxBytes;
+  if (
+    !Number.isSafeInteger(maxUploadBytes) ||
+    maxUploadBytes < 1 ||
+    maxUploadBytes > PILOT_LIMITS.maxBytes
+  )
+    throw new Error("Invalid server upload limit.");
+  const uploadLimitMB = maxUploadBytes / 1024 / 1024;
   const app = Fastify({
     logger: false,
-    bodyLimit: PILOT_LIMITS.maxBytes + 128 * 1024,
+    bodyLimit: maxUploadBytes + 128 * 1024,
     requestTimeout: 120000,
   });
   await app.register(cors, {
@@ -54,7 +63,7 @@ export async function createBackend(options: Options) {
   await app.register(multipart, {
     limits: {
       files: 1,
-      fileSize: PILOT_LIMITS.maxBytes,
+      fileSize: maxUploadBytes,
       fields: 2,
       fieldSize: 32768,
       parts: 3,
@@ -87,6 +96,8 @@ export async function createBackend(options: Options) {
       .header("cache-control", "no-store")
       .header("x-content-type-options", "nosniff");
     if (req.method === "OPTIONS") return;
+    // Platform probes receive no provider, configuration, credential or job metadata.
+    if (req.method === "GET" && req.routeOptions.url === "/livez") return;
     if (req.headers.origin && req.headers.origin !== options.origin)
       return reply.code(403).send({ message: "Origin is not allowed." });
     const provided = Buffer.from(
@@ -111,12 +122,15 @@ export async function createBackend(options: Options) {
     reply.code(status).send({
       message:
         status === 413
-          ? "Footage exceeds the 100 MB server limit."
+          ? `Footage exceeds the ${uploadLimitMB} MB server limit.`
           : status < 500
             ? "Invalid request. Check the file, metadata, and clip limits."
             : "The analysis request could not be completed. No assessment was saved.",
     });
   });
+  app.get("/livez", { config: { rateLimit: false } }, async () => ({
+    status: "ok",
+  }));
   app.get("/health", async () => ({
     schemaVersion: 1,
     available: !!options.provider,
@@ -125,13 +139,13 @@ export async function createBackend(options: Options) {
     tracking: false,
     qualitativeOnly: true,
     limits: {
-      maxBytes: PILOT_LIMITS.maxBytes,
+      maxBytes: maxUploadBytes,
       minSeconds: PILOT_LIMITS.minSeconds,
       maxSeconds: PILOT_LIMITS.maxSeconds,
     },
     message: options.provider
-      ? "Backend connected; provider configured but live accuracy and access require a real-footage validation."
-      : "Backend is reachable, but provider credentials are not configured. No footage will be accepted for analysis.",
+      ? `Backend connected; provider configured but live accuracy and access require a real-footage validation. Upload limit: ${uploadLimitMB} MiB.`
+      : `Backend is reachable, but provider credentials are not configured. No footage will be accepted for analysis. Upload limit: ${uploadLimitMB} MiB.`,
   }));
   app.post("/analyses", async (req, reply) => {
     if (!options.provider)
@@ -199,7 +213,7 @@ export async function createBackend(options: Options) {
         });
       const invalid = validateVideoFile(
         { name: filename, size: file.length, type: mime },
-        100,
+        uploadLimitMB,
       );
       if (
         invalid ||

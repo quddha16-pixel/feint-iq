@@ -102,3 +102,13 @@ limited technical similarities, not equal ability or measured similarity. Report
 without supported comparison data show an honest empty state. The backend contract
 and Gemini prompt support this optional field; live generation still requires an
 authorized backend/provider and real-footage validation.
+
+## Google Cloud Run preparation (not deployed)
+
+The reviewed Cloud Run target is project `feint-identifierq` (`334840153796`) in
+`us-central1`. See [the Cloud Run runbook](deploy/cloudrun/README.md) for the
+non-deploying preflight, explicit future API/IAM/Secret Manager/build/deploy
+commands, health probes, billing assumptions and iPhone Cloud Shell steps.
+The current HTTP/1 Cloud Run pilot defaults to 25 MiB uploads (10–300 seconds)
+and needs always-allocated CPU for background jobs. Nothing is auto-deployed
+by those preparation files; the existing Pages workflow stays separate.

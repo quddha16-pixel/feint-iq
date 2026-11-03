@@ -109,3 +109,34 @@ describe("HTTP analysis contract", () => {
     ).rejects.toThrow("HTTP 401");
   });
 });
+it("respects a Cloud Run backend’s smaller advertised limit without starting an upload", async () => {
+  const request = vi.fn<typeof fetch>(
+    async () =>
+      new Response(
+        JSON.stringify({
+          ...health,
+          limits: { ...health.limits, maxBytes: 25 * 1024 * 1024 },
+        }),
+      ),
+  );
+  const { service } = await connectAnalysisService(
+    "http://localhost:8787",
+    token,
+    request,
+  );
+  const report = makeReport();
+  const onUploadStart = vi.fn();
+  await expect(
+    service.submit(
+      {
+        file: { size: 26 * 1024 * 1024 } as File,
+        video: report.video,
+        configuration: report.configuration,
+      },
+      undefined,
+      onUploadStart,
+    ),
+  ).rejects.toThrow("25 MB");
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(onUploadStart).not.toHaveBeenCalled();
+});

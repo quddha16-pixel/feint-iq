@@ -1,0 +1,17 @@
+# Manual Cloud Build configuration. No trigger is created and this file deploys nothing.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    env:
+      - DOCKER_BUILDKIT=1
+    args:
+      - build
+      - --file
+      - server/Dockerfile
+      - --tag
+      - ${_IMAGE}
+      - .
+images:
+  - ${_IMAGE}
+options:
+  logging: CLOUD_LOGGING_ONLY
+timeout: 900s

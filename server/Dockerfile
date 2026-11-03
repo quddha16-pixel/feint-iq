@@ -8,7 +8,7 @@ RUN --mount=type=secret,id=proxy_ca \
     npm ci --omit=dev --no-audit --no-fund
 COPY --chown=node:node server ./server
 COPY --chown=node:node src/domain ./src/domain
-ENV HOST=0.0.0.0 PORT=8787 NODE_ENV=production
+ENV HOST=0.0.0.0 PORT=8080 NODE_ENV=production
 USER node
-EXPOSE 8787
+EXPOSE 8080
 CMD ["npm", "run", "server"]

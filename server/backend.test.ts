@@ -467,3 +467,54 @@ it("maps provider stylistic references to supporting report observations and rej
     ),
   ).toThrow("missing observation");
 });
+it("exposes only a minimal probe while protecting detailed health and every job endpoint", async () => {
+  const base = await start({ provider: undefined });
+  for (let i = 0; i < 65; i++) {
+    const response = await fetch(base + "/livez");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "ok" });
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  }
+  for (const path of [
+    "/health",
+    "/analyses",
+    "/analyses/missing/status",
+    "/analyses/missing/report",
+  ])
+    expect((await fetch(base + path)).status).toBe(401);
+  const detailed = await fetch(base + "/health", {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  expect(detailed.status).toBe(200);
+  expect((await detailed.json()).available).toBe(false);
+});
+it("advertises and enforces an instance-specific upload limit before media processing", async () => {
+  const prepare = vi.fn(async () => prepared);
+  const base = await start({ maxUploadBytes: 1024 * 1024, prepare });
+  const health = await (
+    await fetch(base + "/health", {
+      headers: { authorization: `Bearer ${token}` },
+    })
+  ).json();
+  expect(health.limits.maxBytes).toBe(1024 * 1024);
+  const data = metadata();
+  data.video.size = 1024 * 1024 + 1;
+  const f = new FormData();
+  f.append("metadata", JSON.stringify(data));
+  f.append(
+    "video",
+    new Blob([new Uint8Array(data.video.size)], { type: "video/webm" }),
+    data.video.name,
+  );
+  const response = await fetch(base + "/analyses", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "idempotency-key": randomUUID(),
+    },
+    body: f,
+  });
+  expect(response.status).toBe(413);
+  expect((await response.json()).message).toContain("1 MB");
+  expect(prepare).not.toHaveBeenCalled();
+});
