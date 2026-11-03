@@ -3,11 +3,9 @@ import { ArrowUpRight, AlertCircle, Crosshair } from "lucide-react";
 export function Brand() {
   return (
     <a className="brand" href="#/" aria-label="Identifier Q dashboard">
-      <span className="brand-mark">
-        Q<span />
-      </span>
+      <span className="brand-mark">iQ</span>
       <span>
-        <small>FEINT ENGINEERING</small>
+        <small>FEINT LABS</small>
         <strong>
           IDENTIFIER <b>Q</b>
         </strong>

@@ -10,7 +10,7 @@ export default function setup() {
       "-i",
       "color=c=black:s=320x240:r=10",
       "-t",
-      "3",
+      "12",
       "-c:v",
       "libvpx",
       "-an",
@@ -25,4 +25,31 @@ export default function setup() {
     throw new Error(
       `Browser tests require ffmpeg with libvpx to generate a synthetic codec fixture: ${result.error?.message ?? result.stderr}`,
     );
+  for (const seconds of [8, 301]) {
+    const result = spawnSync(
+      "ffmpeg",
+      [
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=black:s=32x32:r=2",
+        "-t",
+        String(seconds),
+        "-c:v",
+        "libvpx",
+        "-threads",
+        "1",
+        "-an",
+        "-y",
+        `/tmp/identifier-q-tests/duration-${seconds}.webm`,
+        "-loglevel",
+        "error",
+      ],
+      { encoding: "utf8" },
+    );
+    if (result.status !== 0)
+      throw new Error(
+        "Could not generate duration-boundary codec test footage.",
+      );
+  }
 }

@@ -49,7 +49,7 @@ export function VideoPicker({
             Choose footage <FileVideo size={17} />
           </button>
           <small>
-            MP4, MOV, WebM · Up to {maxMB} MB
+            MP4, MOV, WebM · 10 seconds–5 minutes · Up to {maxMB} MB
             <br />
             Codec compatibility depends on your browser.
           </small>
@@ -111,8 +111,9 @@ export function VideoPicker({
         }}
       />
       <p className="subtle-note">
-        Local preview only. No footage is uploaded. Video files stay in this tab
-        and must be selected again after a reload.
+        Local preview only. Selecting footage does not upload it. A connected
+        backend receives it only after explicit submission. Video files stay in
+        this tab and must be selected again after a reload.
       </p>
     </div>
   );

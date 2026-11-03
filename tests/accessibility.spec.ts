@@ -5,7 +5,14 @@ test("main screens and populated report meet automated WCAG 2.1 AA checks", asyn
   page,
 }) => {
   await page.goto("/");
-  for (const path of ["/", "/new", "/history", "/report", "/settings"]) {
+  for (const path of [
+    "/",
+    "/new",
+    "/history",
+    "/report",
+    "/settings",
+    "/about",
+  ]) {
     await page.goto(`/#${path}`);
     const result = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21aa"])

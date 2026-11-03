@@ -22,3 +22,7 @@ Schema tests deliberately use synthetic reports. No synthetic report is accessib
 ## Deliberate boundaries
 
 No automatic tracking, event detection, punch counts, accuracy calculation, personalized recommendations, grades, or timestamps are invented. The app has an explicit engine-unavailable state. The local frame selector stores a point/time hint, not a bounding box or identity model. Reports preserve their submitted discipline when the preferred discipline changes. Browser preference changes reset unsubmitted ruleset information; a saved report never mutates. The service interface models future jobs, but no queued/processing demo or simulated percentage exists.
+
+## Current Phase 1.5 / Phase 2 status
+
+The earlier sections record the original foundation. Feint Labs branding/About, responsive refinements, 10–300-second video validation, multiple identity confirmations, the authenticated HTTP transport, private-pilot Node/ffmpeg/Gemini boundary, qualitative report mapping, and evidence-linked Shades Of comparisons are now implemented. No live provider analysis, continuous tracking, numerical scoring, account system, hosted backend, or durable server jobs are claimed. See PHASE2-INTEGRATION.md and ACCEPTANCE-REGRESSION.md for current configuration and validation limits.

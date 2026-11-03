@@ -167,3 +167,85 @@ it("withholds scores derived exclusively from estimated evidence", () => {
   r.observations[0].kind = "inferred";
   expect(reportSchema.safeParse(r).success).toBe(false);
 });
+it("preserves legacy reports while validating additional identity confirmations", () => {
+  const report = makeReport();
+  expect(reportSchema.safeParse(report).success).toBe(true);
+  report.configuration.fighter.subjectId = crypto.randomUUID();
+  report.configuration.fighter.confirmationFrames = [
+    { time: 1, x: 0.3, y: 0.6 },
+    { time: 3, x: 0.8, y: 0.4 },
+  ];
+  expect(reportSchema.safeParse(report).success).toBe(true);
+  report.configuration.fighter.confirmationFrames[1].time = 999;
+  expect(reportSchema.safeParse(report).success).toBe(false);
+});
+describe("Shades Of evidence-backed style references", () => {
+  it("supports one to three references linked to real report findings", () => {
+    const r = makeReport();
+    r.styleComparisons = [
+      {
+        referenceId: "dmitry-bivol",
+        explanation:
+          "Synthetic test comparison linked to this test observation.",
+        observationIds: ["obs"],
+      },
+    ];
+    expect(reportSchema.safeParse(r).success).toBe(true);
+    r.styleComparisons.push(
+      {
+        referenceId: "muhammad-ali",
+        explanation: "A second synthetic test reference.",
+        observationIds: ["obs"],
+      },
+      {
+        referenceId: "oleksandr-usyk",
+        explanation: "A third synthetic reference.",
+        observationIds: ["obs"],
+      },
+    );
+    expect(reportSchema.safeParse(r).success).toBe(true);
+  });
+  it("rejects unsupported references, duplicates, wrong disciplines, missing findings, and excessive comparisons", () => {
+    const r = makeReport();
+    r.styleComparisons = [
+      {
+        referenceId: "dmitry-bivol",
+        explanation: "Test-only reference.",
+        observationIds: ["missing"],
+      },
+    ];
+    expect(reportSchema.safeParse(r).success).toBe(false);
+    r.styleComparisons[0].observationIds = ["obs"];
+    r.styleComparisons.push(r.styleComparisons[0]);
+    expect(reportSchema.safeParse(r).success).toBe(false);
+    r.styleComparisons = [
+      {
+        referenceId: "ernesto-hoost",
+        explanation: "Wrong discipline.",
+        observationIds: ["obs"],
+      },
+    ];
+    expect(reportSchema.safeParse(r).success).toBe(false);
+    expect(
+      reportSchema.safeParse({
+        ...r,
+        styleComparisons: [
+          {
+            referenceId: "invented-fighter",
+            explanation: "Unsupported",
+            observationIds: ["obs"],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    r.styleComparisons = Array(4).fill({
+      referenceId: "dmitry-bivol",
+      explanation: "Too many.",
+      observationIds: ["obs"],
+    });
+    expect(reportSchema.safeParse(r).success).toBe(false);
+  });
+  it("retains a truthful empty state for old or insufficient reports", () => {
+    expect(reportSchema.parse(makeReport()).styleComparisons).toBeUndefined();
+  });
+});

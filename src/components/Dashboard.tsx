@@ -10,14 +10,17 @@ import {
 } from "lucide-react";
 import type { CompletedAnalysisReport } from "../domain/contracts";
 import { gradeFor, metricsFor, type Discipline } from "../domain/metrics";
+import type { EngineState } from "./EngineConnection";
 import { Progression } from "./Progression";
 import { ActionLink, EmptyState, SectionTitle, Tag } from "./ui";
 export function Dashboard({
   discipline,
+  engine,
   reports,
   hasDraft,
 }: {
   discipline: Discipline;
+  engine: EngineState;
   reports: CompletedAnalysisReport[];
   hasDraft: boolean;
 }) {
@@ -49,7 +52,7 @@ export function Dashboard({
             weaknesses, and opportunities hidden inside your performance.
           </p>
           <div className="hero-actions">
-            <ActionLink href="#/new">Start new analysis</ActionLink>
+            <ActionLink href="#/new">Use identifierQ</ActionLink>
             <a className="quiet-link" href="#/history">
               View previous analyses <ArrowRight size={16} />
             </a>
@@ -157,8 +160,18 @@ export function Dashboard({
           </span>
           <div>
             <span className="muted tiny">ANALYSIS ENGINE</span>
-            <strong className="engine-status">Integration required</strong>
-            <small>Local setup & video review available</small>
+            <strong className="engine-status">
+              {engine.available
+                ? "Backend connected"
+                : engine.connected
+                  ? "Provider unavailable"
+                  : "Integration required"}
+            </strong>
+            <small>
+              {engine.available
+                ? "Qualitative boxing pilot · No tracking"
+                : "Local setup & video review available"}
+            </small>
           </div>
           <span className="status-amber" />
         </div>
@@ -207,7 +220,9 @@ export function Dashboard({
                     </small>
                   </div>
                   <span className="grade-small">
-                    {gradeFor(r.assessment.score)}
+                    {r.assessment.score === null
+                      ? "—"
+                      : gradeFor(r.assessment.score)}
                   </span>
                   <ArrowRight size={18} />
                 </a>
@@ -248,17 +263,66 @@ export function Dashboard({
             </li>
           </ol>
           <div className="subtle-note">
-            <Timer size={16} /> Automated assessments require a connected
-            analysis engine.
+            <Timer size={16} />{" "}
+            {engine.available
+              ? "Connected provider requires real-footage validation."
+              : "Automated assessments require a connected analysis engine."}
           </div>
         </section>
       </div>
+      <details className="panel mobile-primer">
+        <summary>How identifierQ works</summary>
+        <ol>
+          <li>Bring a clear clip, 10 seconds to 5 minutes long.</li>
+          <li>Identify your fighter and choose a technical focus.</li>
+          <li>
+            Submit only to a connected backend; review supported findings
+            against their source frames.
+          </li>
+        </ol>
+      </details>
+      <section className="panel capabilities-panel">
+        <SectionTitle
+          title="What your workspace supports"
+          label="CAPABILITY, CLEARLY DEFINED"
+        />
+        <div className="capabilities-grid">
+          <div>
+            <h3>Video & identity setup</h3>
+            <p>
+              10 seconds–5 minutes. Corner, initial position, notes, and up to
+              five identity reference frames.
+            </p>
+            <Tag accent>AVAILABLE LOCALLY</Tag>
+          </div>
+          <div>
+            <h3>Evidence-led boxing review</h3>
+            <p>
+              Qualitative findings from sampled video frames, with source-frame
+              links. Requires an authorized backend and provider.
+            </p>
+            <Tag>
+              {engine.available ? "BACKEND CONNECTED" : "CONNECTION REQUIRED"}
+            </Tag>
+          </div>
+          <div>
+            <h3>Continuous fighter tracking</h3>
+            <p>
+              Camera movement, occlusion, and identity changes require a
+              validated tracking system.
+            </p>
+            <Tag>NOT IMPLEMENTED</Tag>
+          </div>
+        </div>
+      </section>
       <Progression reports={reports} />
       <footer className="dashboard-footer">
         <span>
-          FEINT ENGINEERING <b>/</b> IDENTIFIER Q
+          FEINT LABS <b>/</b> IDENTIFIER Q
         </span>
-        <span>Understand the fight. Engineer the improvement.</span>
+        <a className="quiet-link" href="#/about">
+          About Feint Labs →
+        </a>
       </footer>
     </>
   );

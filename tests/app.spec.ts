@@ -11,13 +11,11 @@ async function upload(page: Page) {
 async function importReport(page: Page, id = "test-report", score = 70) {
   const r = makeReport(id, score);
   r.video.size = statSync(videoPath).size;
-  await page
-    .locator('input[aria-label="Import report JSON"]')
-    .setInputFiles({
-      name: `${id}.json`,
-      mimeType: "application/json",
-      buffer: Buffer.from(JSON.stringify(r)),
-    });
+  await page.locator('input[aria-label="Import report JSON"]').setInputFiles({
+    name: `${id}.json`,
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(r)),
+  });
   return r;
 }
 test("four-step workflow, validated footage and honest unavailable analysis", async ({
@@ -27,18 +25,19 @@ test("four-step workflow, validated footage and honest unavailable analysis", as
   await expect(
     page.getByRole("button", { name: "boxing", exact: true }).first(),
   ).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("link", { name: "Start new analysis" }).click();
+  await page
+    .getByRole("main")
+    .getByRole("link", { name: "Use identifierQ", exact: true })
+    .click();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText(
     "Select a browser-compatible video",
   );
-  await page
-    .locator('input[aria-label="Choose video file"]')
-    .setInputFiles({
-      name: "bad.txt",
-      mimeType: "text/plain",
-      buffer: Buffer.from("no"),
-    });
+  await page.locator('input[aria-label="Choose video file"]').setInputFiles({
+    name: "bad.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("no"),
+  });
   await expect(
     page.getByRole("alert").filter({ hasText: "Choose an MP4" }),
   ).toBeVisible();
@@ -186,13 +185,11 @@ test("rejects malformed imports and preserves corrupted local storage for explic
   page,
 }) => {
   await page.goto("/#/history");
-  await page
-    .locator('input[aria-label="Import report JSON"]')
-    .setInputFiles({
-      name: "bad.json",
-      mimeType: "application/json",
-      buffer: Buffer.from('{"id":"bad"}'),
-    });
+  await page.locator('input[aria-label="Import report JSON"]').setInputFiles({
+    name: "bad.json",
+    mimeType: "application/json",
+    buffer: Buffer.from('{"id":"bad"}'),
+  });
   await expect(
     page.getByRole("status").filter({ hasText: "Import failed" }),
   ).toBeVisible();
@@ -232,7 +229,10 @@ for (const width of [320, 375, 390, 430, 768, 1440])
       ).toBe(true);
     }
     await page.goto("/");
-    await page.getByRole("link", { name: "Start new analysis" }).click();
+    await page
+      .getByRole("main")
+      .getByRole("link", { name: "Use identifierQ", exact: true })
+      .click();
     await expect(page).toHaveURL(/#\/new$/);
     await page.goBack();
     await expect(
@@ -246,13 +246,11 @@ for (const width of [320, 375, 390, 430, 768, 1440])
   });
 test("unsupported codec gives actionable feedback", async ({ page }) => {
   await page.goto("/#/new");
-  await page
-    .locator('input[aria-label="Choose video file"]')
-    .setInputFiles({
-      name: "invalid.mp4",
-      mimeType: "video/mp4",
-      buffer: readFileSync(videoPath).subarray(0, 20),
-    });
+  await page.locator('input[aria-label="Choose video file"]').setInputFiles({
+    name: "invalid.mp4",
+    mimeType: "video/mp4",
+    buffer: readFileSync(videoPath).subarray(0, 20),
+  });
   await expect(page.getByRole("alert")).toContainText("could not decode");
 });
 test("keyboard navigation and accessible workspace guide", async ({ page }) => {

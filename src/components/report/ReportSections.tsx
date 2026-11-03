@@ -1,3 +1,4 @@
+import { ShadesOf } from "./ShadesOf";
 import { Play } from "lucide-react";
 import type {
   CompletedAnalysisReport,
@@ -26,10 +27,12 @@ export function PerformanceOverview({ report: r, onFinding }: FindingProps) {
       <section className="panel assessment-panel">
         <div className="grade-block">
           <span className="eyebrow">OVERALL ASSESSMENT</span>
-          <strong>{gradeFor(r.assessment.score)}</strong>
+          <strong>
+            {r.assessment.score === null ? "—" : gradeFor(r.assessment.score)}
+          </strong>
           <span>
             {r.assessment.score === null
-              ? "Insufficient evidence"
+              ? "Not assessed"
               : `${r.assessment.score} / 100`}
           </span>
         </div>
@@ -62,6 +65,7 @@ export function PerformanceOverview({ report: r, onFinding }: FindingProps) {
           </section>
         ))}
       </div>
+      <ShadesOf report={r} onFinding={onFinding} />
       <section className="panel">
         <SectionTitle
           title="Technical scorecard"
@@ -151,7 +155,11 @@ export function TechnicalBreakdown({
                   onClick={() => seek(e.verifiedTime!, o.id)}
                 >
                   <Play size={13} /> {formatTime(e.verifiedTime)}{" "}
-                  <span>Verified timestamp</span>
+                  <span>
+                    {e.source === "sampled-frame"
+                      ? "Verified source-frame time"
+                      : "Verified timestamp"}
+                  </span>
                 </button>
               ) : (
                 <small>No verified timestamp</small>

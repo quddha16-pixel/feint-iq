@@ -21,7 +21,11 @@ export interface AnalysisService {
     cancel: boolean;
     tracking: boolean;
   };
-  submit(input: AnalysisSubmission, signal?: AbortSignal): Promise<AnalysisJob>;
+  submit(
+    input: AnalysisSubmission,
+    signal?: AbortSignal,
+    onUploadStart?: () => void,
+  ): Promise<AnalysisJob>;
   status(id: string, signal?: AbortSignal): Promise<AnalysisJob>;
   report(id: string, signal?: AbortSignal): Promise<CompletedAnalysisReport>;
   cancel(id: string): Promise<void>;
@@ -54,3 +58,5 @@ export const analysisService: AnalysisService = {
     throw new AnalysisUnavailableError();
   },
 };
+
+export { connectAnalysisService } from "./httpAnalysis";

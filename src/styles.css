@@ -3343,3 +3343,314 @@ dialog.guide::backdrop {
 .section-title .quiet-link {
   min-height: 44px;
 }
+/* Phase 1.5: a wider desktop workspace and compact, comfortable phone layouts. */
+:root {
+  --text: #f3f6fa;
+}
+.brand-mark {
+  letter-spacing: -0.07em;
+  font-size: 34px;
+  width: 39px;
+  min-width: 39px;
+}
+.brand-mark > span {
+  display: none;
+}
+.brand small {
+  font-size: 9px;
+}
+.brand strong {
+  font-size: 15px;
+}
+.about-intro {
+  max-width: 900px;
+  padding: 36px;
+}
+.about-intro h2 {
+  font-size: 34px;
+  line-height: 1.25;
+}
+.about-intro > p {
+  max-width: 700px;
+  font-size: 14px;
+  color: #b1c1d5;
+}
+.about-principles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 24px;
+}
+.about-principles h3 {
+  margin-top: 20px;
+  font-size: 17px;
+}
+.about-principles p,
+.capabilities-grid p {
+  font-size: 12px;
+  color: #9db0c7;
+}
+.capabilities-panel {
+  margin-top: 24px;
+}
+.capabilities-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px;
+}
+.capabilities-grid h3 {
+  font-size: 14px;
+}
+.capabilities-grid .tag {
+  font-size: 8px;
+}
+.workflow-lock {
+  width: 100%;
+  min-width: 0;
+}
+.identity-references {
+  list-style: none;
+  padding: 0;
+  margin: 15px 0;
+}
+.identity-references li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #2a3543;
+  font-size: 12px;
+  color: #b6cce2;
+}
+.identity-references .icon-button {
+  font-size: 20px;
+}
+.mobile-brand {
+  letter-spacing: -0.05em;
+}
+.sidebar nav a {
+  min-height: 45px;
+}
+.about-intro .button {
+  margin-top: 10px;
+}
+@media (min-width: 1300px) {
+  main {
+    max-width: 1800px;
+    padding-left: 46px;
+    padding-right: 46px;
+  }
+  .hero {
+    grid-template-columns: 1.4fr 1fr;
+  }
+  .hero-copy {
+    padding-right: 25px;
+  }
+  .hero p {
+    font-size: 14px;
+    max-width: 470px;
+  }
+  .status-card small {
+    font-size: 11px;
+  }
+  .status-card .tiny {
+    font-size: 9px;
+  }
+  .dashboard-columns {
+    grid-template-columns: 1.5fr 1fr;
+  }
+  .report-layout {
+    grid-template-columns: minmax(340px, 0.85fr) minmax(0, 1.3fr);
+  }
+  .workflow-layout {
+    grid-template-columns: minmax(0, 1fr) 280px;
+  }
+}
+@media (max-width: 760px) {
+  .about-principles {
+    grid-template-columns: 1fr;
+  }
+  .capabilities-grid {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+  .capabilities-grid > div + div {
+    border-top: 1px solid #2a3543;
+    padding-top: 20px;
+  }
+  .about-intro {
+    padding: 25px;
+  }
+  .about-intro h2 {
+    font-size: 28px;
+  }
+  .hero {
+    min-height: 0;
+  }
+  .hero-copy {
+    padding-top: 26px;
+  }
+  .about-principles {
+    gap: 15px;
+  }
+  .mobile-nav a {
+    font-size: 9px;
+  }
+  .sidebar nav a {
+    font-size: 11px;
+  }
+}
+@media (max-width: 480px) {
+  .hero-visual {
+    display: none;
+  }
+  .hero-copy {
+    padding-bottom: 25px;
+  }
+  .hero h1 {
+    font-size: 37px;
+  }
+  .hero-note {
+    margin-top: 12px;
+  }
+  .hero p {
+    margin-bottom: 20px;
+  }
+  .recent-panel .empty-state {
+    min-height: 235px;
+    padding: 20px 2px;
+  }
+  .status-grid {
+    margin-bottom: 20px;
+  }
+  .hero-actions {
+    gap: 5px;
+  }
+  .hero {
+    min-height: 0;
+  }
+  .page-heading h1 {
+    font-size: 27px;
+  }
+  .workflow-aside .panel {
+    display: none;
+  }
+  .aside-note {
+    padding-top: 14px;
+  }
+  .workflow-panel .section-title {
+    margin-bottom: 18px;
+  }
+  .dropzone {
+    padding-top: 26px;
+    padding-bottom: 25px;
+  }
+  .hero-note {
+    max-width: none;
+  }
+  .settings-grid .form-stack input {
+    font-size: 16px;
+  }
+  .mobile-brand {
+    font-size: 25px;
+  }
+}
+@media (max-width: 760px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+.mobile-primer {
+  display: none;
+}
+@media (max-width: 480px) {
+  .dashboard-columns .approach-panel {
+    display: none;
+  }
+  .recent-panel .empty-icon {
+    display: none;
+  }
+  .recent-panel .empty-state {
+    min-height: 0;
+    padding: 14px 0 8px;
+  }
+  .mobile-primer {
+    display: block;
+    margin-top: 18px;
+    padding: 8px 18px;
+  }
+  .mobile-primer summary {
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+    min-height: 44px;
+    color: #bdd7f0;
+  }
+  .mobile-primer summary:after {
+    content: "+";
+    margin-left: auto;
+  }
+  .mobile-primer[open] summary:after {
+    content: "−";
+  }
+  .mobile-primer ol {
+    padding-left: 18px;
+    font-size: 12px;
+    color: #9db0c7;
+  }
+  .mobile-primer li {
+    margin-bottom: 10px;
+  }
+}
+.shades-of > .muted {
+  font-size: 12px;
+  max-width: 700px;
+}
+.style-comparisons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 15px;
+  margin-top: 20px;
+}
+.style-comparison {
+  padding: 20px;
+  border: 1px solid #304963;
+  border-radius: 6px;
+  background: #142234;
+}
+.style-comparison .eyebrow {
+  font-size: 8px;
+  color: #82b8ed;
+}
+.style-comparison h3 {
+  font-size: 21px;
+  color: #d6e9ff;
+}
+.style-comparison > p {
+  font-size: 12px;
+  color: #b0c3d9;
+}
+.style-evidence {
+  border-top: 1px solid #30435a;
+  padding-top: 13px;
+}
+.style-evidence small {
+  font-size: 8px;
+  letter-spacing: 0.1em;
+}
+.style-evidence .text-button {
+  font-size: 11px;
+}
+.style-empty {
+  padding: 18px 0 0;
+  border-top: 1px solid #29384a;
+}
+.style-empty h3 {
+  font-size: 14px;
+}
+.style-empty p {
+  font-size: 12px;
+  color: #98abc1;
+  margin-bottom: 0;
+}

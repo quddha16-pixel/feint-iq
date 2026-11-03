@@ -22,7 +22,7 @@ export function makeReport(
       id: "test-video",
       name: "test-footage.webm",
       size: 100,
-      duration: 3,
+      duration: 12,
       mime: "video/webm",
     },
     createdAt: "2026-01-01T00:00:00.000Z",

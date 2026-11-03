@@ -1,17 +1,29 @@
 import { z } from "zod";
+import { referenceIds, referenceFor } from "./styles";
 import { analysisTypes, metricsFor, type Discipline } from "./metrics";
 const text = z.string().trim().min(1).max(10000);
 const id = z.string().min(1).max(200);
 const timestamp = z.number().finite().nonnegative();
+export const identityFrameSchema = z.object({
+  time: timestamp,
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+  note: z.string().max(300).optional(),
+});
 export const fighterSchema = z.object({
   name: z.string().trim().min(1).max(120),
   method: z.enum(["red", "blue", "left", "right", "manual"]),
   notes: z.string().max(2000),
-  frame: z
+  frame: identityFrameSchema.optional(),
+  confirmationFrames: z.array(identityFrameSchema).max(5).optional(),
+  subjectId: z.string().uuid().optional(),
+  tracking: z
     .object({
-      time: timestamp,
-      x: z.number().min(0).max(1),
-      y: z.number().min(0).max(1),
+      identityIndependentOfPosition: z.literal(true),
+      status: z.literal("unverified"),
+      challenges: z
+        .array(z.enum(["camera-movement", "occlusion", "position-change"]))
+        .max(3),
     })
     .optional(),
 });
@@ -39,6 +51,7 @@ export const configSchema = z
     if (
       c.fighter.method === "manual" &&
       !c.fighter.frame &&
+      !c.fighter.confirmationFrames?.length &&
       !c.fighter.notes.trim()
     )
       ctx.addIssue({
@@ -65,6 +78,8 @@ export const evidenceSchema = z
     description: text,
     verifiedTime: timestamp.nullable(),
     confidence: z.number().min(0).max(1).nullable(),
+    source: z.enum(["sampled-frame", "verified-event"]).optional(),
+    frameId: z.string().max(200).optional(),
   })
   .superRefine((e, ctx) => {
     if (e.verifiedTime !== null && e.kind !== "observed")
@@ -130,6 +145,12 @@ export const assessmentSchema = z.object({
   priorities: z.array(id).max(3),
 });
 export type OverallAssessment = z.infer<typeof assessmentSchema>;
+export const styleComparisonSchema = z.object({
+  referenceId: z.enum(referenceIds),
+  explanation: text,
+  observationIds: z.array(id).min(1).max(6),
+});
+export type StyleComparison = z.infer<typeof styleComparisonSchema>;
 const reportBase = z.object({
   schemaVersion: z.literal(1),
   id,
@@ -145,6 +166,7 @@ const reportBase = z.object({
   evidence: z.array(evidenceSchema),
   observations: z.array(observationSchema),
   recommendations: z.array(recommendationSchema),
+  styleComparisons: z.array(styleComparisonSchema).max(3).optional(),
 });
 export const reportSchema = reportBase.superRefine((r, ctx) => {
   const fail = (message: string) => ctx.addIssue({ code: "custom", message });
@@ -163,6 +185,12 @@ export const reportSchema = reportBase.superRefine((r, ctx) => {
     r.configuration.fighter.frame.time > r.video.duration
   )
     fail("Fighter reference exceeds video duration.");
+  if (
+    r.configuration.fighter.confirmationFrames?.some(
+      (f) => f.time > r.video.duration,
+    )
+  )
+    fail("Identity confirmation frame exceeds video duration.");
   const definitions = metricsFor(
     r.configuration.discipline,
     r.configuration.ruleset,
@@ -238,6 +266,30 @@ export const reportSchema = reportBase.superRefine((r, ctx) => {
   for (const oid of [...r.assessment.strengths, ...r.assessment.weaknesses])
     if (!observations.has(oid))
       fail("Assessment must reference actual observations.");
+  if (
+    new Set(r.styleComparisons?.map((s) => s.referenceId)).size !==
+    (r.styleComparisons?.length ?? 0)
+  )
+    fail("Style comparisons must use distinct fighter references.");
+  for (const comparison of r.styleComparisons ?? []) {
+    if (
+      referenceFor(comparison.referenceId)?.discipline !==
+      r.configuration.discipline
+    )
+      fail("The style reference must match the report discipline.");
+    if (comparison.observationIds.some((id) => !observations.has(id)))
+      fail("Style comparisons must link to actual report observations.");
+    if (
+      !comparison.observationIds.some((id) =>
+        r.observations
+          .find((o) => o.id === id)
+          ?.evidenceIds.some(
+            (eid) => r.evidence.find((e) => e.id === eid)?.kind === "observed",
+          ),
+      )
+    )
+      fail("Style comparisons need directly observed source evidence.");
+  }
   for (const rid of r.assessment.priorities)
     if (!r.recommendations.some((x) => x.id === rid))
       fail("Assessment priorities must reference recommendations.");

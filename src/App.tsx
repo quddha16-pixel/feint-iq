@@ -8,6 +8,7 @@ import {
   Plus,
   Settings2,
   UserRound,
+  Info,
 } from "lucide-react";
 import type { Discipline } from "./domain/metrics";
 import { useWorkspace } from "./state/useWorkspace";
@@ -16,13 +17,15 @@ import { Dashboard } from "./components/Dashboard";
 import { Workflow } from "./components/Workflow";
 import { Report } from "./components/Report";
 import { History } from "./components/History";
+import { About } from "./components/About";
 import { Settings } from "./components/Settings";
 import { Brand, Notice } from "./components/ui";
 const nav = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/new", label: "New analysis", icon: Plus },
+  { path: "/new", label: "Use identifierQ", icon: Plus },
   { path: "/history", label: "Analysis history", icon: Activity },
   { path: "/report", label: "Analysis report", icon: FileBarChart2 },
+  { path: "/about", label: "About Feint Labs", icon: Info },
   { path: "/settings", label: "Settings", icon: Settings2 },
 ];
 function route() {
@@ -48,6 +51,12 @@ export function App() {
     error,
     status,
     frame,
+    frames,
+    removeFrame,
+    engine,
+    connectEngine,
+    disconnectEngine,
+    cancelAnalysis,
     message,
     submitting,
     updateDraft,
@@ -94,7 +103,11 @@ export function App() {
             >
               <n.icon size={19} />
               <span>{n.label}</span>
-              {n.path === "/new" && <span className="nav-plus">+</span>}
+              {n.path === "/new" && (
+                <span className="nav-plus" aria-hidden="true">
+                  +
+                </span>
+              )}
             </a>
           ))}
         </nav>
@@ -102,7 +115,14 @@ export function App() {
           <div className="engine-card">
             <span className="status-amber" />
             <span>
-              Analysis engine<strong>Integration required</strong>
+              Analysis engine
+              <strong>
+                {engine.available
+                  ? "Backend connected"
+                  : engine.connected
+                    ? "Provider unavailable"
+                    : "Integration required"}
+              </strong>
             </span>
             <a href="#/settings" aria-label="View engine integration status">
               <ArrowUpRight size={16} />
@@ -112,7 +132,7 @@ export function App() {
             <CircleHelp size={18} /> Workspace guide <ArrowUpRight size={15} />
           </button>
           <div className="sidebar-signature">
-            FEINT ENGINEERING<span>PRECISION. PERSPECTIVE. PROGRESS.</span>
+            FEINT LABS<span>PRECISION. PERSPECTIVE. PROGRESS.</span>
           </div>
         </div>
       </aside>
@@ -120,7 +140,7 @@ export function App() {
         <header className="app-header">
           <div className="header-context">
             <span className="mobile-brand">
-              IQ<span> / </span>
+              iQ<span> / </span>
             </span>
             <span>Workspace</span>
             <span className="slash">/</span>
@@ -155,12 +175,24 @@ export function App() {
           </div>
         </header>
         <main id="main-content" tabIndex={-1}>
+          {["uploading", "queued", "processing"].includes(status) && (
+            <Notice>
+              Analysis {status}.{" "}
+              {status === "uploading"
+                ? "Sending your footage to the connected backend."
+                : "Progress is indeterminate; no percentage is estimated."}{" "}
+              <button className="text-button" onClick={cancelAnalysis}>
+                Cancel analysis
+              </button>
+            </Notice>
+          )}
           {message && (
             <Notice onDismiss={() => setMessage("")}>{message}</Notice>
           )}
           {path === "/" ? (
             <Dashboard
               discipline={preferences.discipline}
+              engine={engine}
               reports={reports}
               hasDraft={!!draft.fighterName}
             />
@@ -176,6 +208,10 @@ export function App() {
               onVideoError={setVideoError}
               onRemove={removeVideo}
               frame={frame}
+              frames={frames}
+              onRemoveFrame={removeFrame}
+              engineAvailable={engine.available}
+              onCancel={cancelAnalysis}
               onFrame={setFrame}
               status={status}
               error={error}
@@ -196,12 +232,18 @@ export function App() {
                 (r) => `/report/${encodeURIComponent(r.id)}` === path,
               )}
             />
+          ) : path === "/about" ? (
+            <About />
           ) : path === "/settings" ? (
             <Settings
               preferences={preferences}
               onSave={savePreferences}
               onClear={clearWorkspace}
               onExport={exportWorkspace}
+              engine={engine}
+              onConnect={connectEngine}
+              onDisconnect={disconnectEngine}
+              busy={submitting.current}
             />
           ) : (
             <section className="panel not-found">
@@ -216,7 +258,7 @@ export function App() {
       </div>
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {nav
-          .filter((n) => n.path !== "/report")
+          .filter((n) => n.path !== "/report" && n.path !== "/about")
           .map((n) => (
             <a
               key={n.path}
@@ -225,7 +267,13 @@ export function App() {
               aria-current={current?.path === n.path ? "page" : undefined}
             >
               <n.icon size={20} />
-              <span>{n.path === "/history" ? "History" : n.label}</span>
+              <span>
+                {n.path === "/history"
+                  ? "History"
+                  : n.path === "/new"
+                    ? "Use identifierQ"
+                    : n.label}
+              </span>
             </a>
           ))}
       </nav>

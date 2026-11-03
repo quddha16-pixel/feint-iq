@@ -29,6 +29,8 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
+      - name: Install video decoding tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Unit tests
         run: npm test
       - name: Build production application

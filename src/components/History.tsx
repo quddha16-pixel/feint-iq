@@ -45,7 +45,7 @@ export function History({
       <PageHeading
         eyebrow="YOUR PERFORMANCE LIBRARY"
         title="Build a body of evidence."
-        action={<ActionLink href="#/new">New analysis</ActionLink>}
+        action={<ActionLink href="#/new">Use identifierQ</ActionLink>}
       >
         Your saved assessments, technical patterns, and progress over time.
       </PageHeading>
@@ -172,7 +172,11 @@ export function History({
                   </div>
                   <Tag>{r.configuration.discipline}</Tag>
                   <span className="history-score">
-                    <strong>{gradeFor(r.assessment.score)}</strong>
+                    <strong>
+                      {r.assessment.score === null
+                        ? "—"
+                        : gradeFor(r.assessment.score)}
+                    </strong>
                     <small>
                       {r.assessment.score === null
                         ? "Not assessed"

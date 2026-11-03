@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -49,6 +49,10 @@ interface Props {
   onVideoError: (s: string) => void;
   onRemove: () => void;
   frame?: FighterIdentification["frame"];
+  frames: NonNullable<FighterIdentification["confirmationFrames"]>;
+  onRemoveFrame: (index: number) => void;
+  engineAvailable: boolean;
+  onCancel: () => void;
   onFrame: (f: FighterIdentification["frame"]) => void;
   status: AnalysisStatus;
   error: string;
@@ -58,7 +62,11 @@ interface Props {
 }
 export function Workflow(p: Props) {
   const { draft: d, update, video } = p;
+  const busy = ["ready", "uploading", "queued", "processing"].includes(
+    p.status,
+  );
   const player = useRef<HTMLVideoElement>(null);
+  const [playerTime, setPlayerTime] = useState(0);
   const next = () => {
     const error = p.validateStep(d.step);
     if (error) {
@@ -89,398 +97,468 @@ export function Workflow(p: Props) {
         Set your perspective in four steps. Your setup stays with you as you
         move.
       </PageHeading>
-      <ol className="stepper" aria-label="Analysis progress">
-        {steps.map((s, i) => (
-          <li
-            key={s.label}
-            className={`${d.step === i + 1 ? "active" : ""} ${d.step > i + 1 ? "done" : ""}`}
-          >
-            <button
-              disabled={i + 1 > d.step}
-              onClick={() => {
-                p.onError("");
-                update({ step: i + 1 });
-              }}
-              aria-current={d.step === i + 1 ? "step" : undefined}
+      <fieldset className="workflow-lock" disabled={busy}>
+        <ol className="stepper" aria-label="Analysis progress">
+          {steps.map((s, i) => (
+            <li
+              key={s.label}
+              className={`${d.step === i + 1 ? "active" : ""} ${d.step > i + 1 ? "done" : ""}`}
             >
-              <span>
-                {d.step > i + 1 ? (
-                  <Check size={18} />
-                ) : (
-                  String(i + 1).padStart(2, "0")
-                )}
-              </span>
-              <div>
-                <small>STEP {i + 1}</small>
-                <strong>{s.label}</strong>
-              </div>
-            </button>
-          </li>
-        ))}
-      </ol>
-      <div className="workflow-layout">
-        <section className="panel workflow-panel">
-          <div className="section-title">
-            <div>
-              <p className="eyebrow">STEP 0{d.step} / 04</p>
-              <h2>{steps[d.step - 1].label}</h2>
-            </div>
-            <Tag accent>{d.discipline.toUpperCase()}</Tag>
-          </div>
-          {p.error && (
-            <Notice tone={p.status === "unavailable" ? "info" : "error"}>
-              {p.error}
-            </Notice>
-          )}
-          {d.step === 1 && (
-            <VideoPicker
-              video={video}
-              maxMB={p.maxMB}
-              error={p.videoError}
-              onSelect={p.onSelect}
-              onReady={p.onReady}
-              onError={p.onVideoError}
-              onRemove={p.onRemove}
-            />
-          )}
-          {d.step === 2 && (
-            <div className="form-stack">
-              <label>
-                Fighter name or identifier
-                <input
-                  value={d.fighterName}
-                  maxLength={120}
-                  onChange={(e) => update({ fighterName: e.target.value })}
-                  placeholder="e.g. Alex / athlete 01"
-                  autoComplete="off"
-                />
-              </label>
-              <fieldset>
-                <legend>Who are we evaluating?</legend>
-                <div className="selection-grid">
-                  {methods.map(([value, label, description]) => (
-                    <label
-                      key={value}
-                      className={`selection-card ${d.method === value ? "selected" : ""}`}
-                    >
-                      <input
-                        type="radio"
-                        name="fighter"
-                        value={value}
-                        checked={d.method === value}
-                        onChange={() => {
-                          update({ method: value });
-                          p.onFrame(undefined);
-                        }}
-                      />
-                      <div>
-                        <strong>{label}</strong>
-                        <small>{description}</small>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-              <Notice>
-                Corner and screen position are identification hints, not
-                verified tracking. Fighters change sides; automatic identity
-                tracking is not connected.
-              </Notice>
-              {d.method === "manual" && video?.ready && (
-                <div>
-                  <h3>Mark a representative frame</h3>
-                  <p className="muted">
-                    Pause the footage, then tap or click your fighter. A
-                    normalized point and video time are saved as a reference;
-                    this does not track the fighter.
-                  </p>
-                  <div className="frame-picker">
-                    <video
-                      ref={player}
-                      controls
-                      playsInline
-                      src={video.url}
-                      aria-label="Fighter identification video"
-                    />
-                    <button
-                      className="frame-overlay"
-                      aria-label="Mark fighter in paused video"
-                      onClick={(e) => {
-                        const v = player.current;
-                        if (!v || v.readyState < 2) return;
-                        p.onError("");
-                        v.pause();
-                        const box = v.getBoundingClientRect();
-                        p.onFrame({
-                          time: v.currentTime,
-                          x: (e.clientX - box.left) / box.width,
-                          y: (e.clientY - box.top) / box.height,
-                        });
-                      }}
-                    >
-                      {p.frame && (
-                        <span
-                          className="frame-point"
-                          style={{
-                            left: `${p.frame.x * 100}%`,
-                            top: `calc(${p.frame.y * 100}% + ${52 * p.frame.y}px)`,
-                          }}
-                        >
-                          +
-                        </span>
-                      )}
-                    </button>
-                  </div>
-                  <button
-                    className="button secondary"
-                    onClick={() => {
-                      const v = player.current;
-                      if (v && v.readyState >= 2) {
-                        v.pause();
-                        p.onFrame({ time: v.currentTime, x: 0.5, y: 0.5 });
-                      }
-                    }}
-                  >
-                    Use current frame center
-                  </button>
-                  {p.frame && (
-                    <p className="success-text">
-                      Reference selected at {formatTime(p.frame.time)}. Point
-                      saved; identity unverified.
-                    </p>
+              <button
+                disabled={i + 1 > d.step}
+                onClick={() => {
+                  p.onError("");
+                  update({ step: i + 1 });
+                }}
+                aria-current={d.step === i + 1 ? "step" : undefined}
+              >
+                <span>
+                  {d.step > i + 1 ? (
+                    <Check size={18} />
+                  ) : (
+                    String(i + 1).padStart(2, "0")
                   )}
-                </div>
-              )}
-              <label>
-                Identification notes{" "}
-                <span className="muted">
-                  {d.method === "manual"
-                    ? "(required if no frame selected)"
-                    : "(optional)"}
                 </span>
-                <textarea
-                  maxLength={2000}
-                  rows={3}
-                  value={d.notes}
-                  onChange={(e) => update({ notes: e.target.value })}
-                  placeholder="Glove color, shorts, equipment, or other visible identifying details…"
-                />
-              </label>
-            </div>
-          )}
-          {d.step === 3 && (
-            <div className="form-stack">
-              <fieldset>
-                <legend>Discipline</legend>
-                <div className="segmented inline">
-                  {(["boxing", "kickboxing"] as const).map((x) => (
-                    <button
-                      key={x}
-                      aria-pressed={d.discipline === x}
-                      onClick={() =>
-                        update({
-                          discipline: x,
-                          ruleset: "k1",
-                          rulesetNotes: "",
-                        })
-                      }
-                    >
-                      {x}
-                    </button>
-                  ))}
+                <div>
+                  <small>STEP {i + 1}</small>
+                  <strong>{s.label}</strong>
                 </div>
-              </fieldset>
-              {d.discipline === "kickboxing" && (
-                <>
-                  <label>
-                    Competitive ruleset
-                    <select
-                      value={d.ruleset}
-                      onChange={(e) =>
-                        update({
-                          ruleset: e.target.value as Ruleset,
-                          rulesetNotes: "",
-                        })
-                      }
-                    >
-                      {Object.entries(rulesetLabels).map(([k, v]) => (
-                        <option key={k} value={k}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    {d.ruleset === "custom"
-                      ? "Describe permitted techniques and restrictions"
-                      : "Ruleset clarification (optional)"}
-                    <textarea
-                      rows={2}
-                      value={d.rulesetNotes}
-                      maxLength={2000}
-                      onChange={(e) => update({ rulesetNotes: e.target.value })}
-                      placeholder="Specify local variations, knee or clinch restrictions, and legal targets."
-                    />
-                  </label>
-                  <p className="subtle-note">
-                    Knees are enabled only for K-1 style. Checks are not
-                    assessed under full-contact or unspecified custom rules. A
-                    future engine must verify the exact competition rules before
-                    scoring.
-                  </p>
-                </>
-              )}
-              <fieldset>
-                <legend>Analysis focus</legend>
-                <div className="selection-grid">
-                  {Object.entries(analysisTypes).map(([value, label]) => (
-                    <label
-                      className={`selection-card ${d.type === value ? "selected" : ""}`}
-                      key={value}
-                    >
-                      <input
-                        type="radio"
-                        name="type"
-                        value={value}
-                        checked={d.type === value}
-                        onChange={() =>
-                          update({ type: value as SavedDraft["type"] })
+              </button>
+            </li>
+          ))}
+        </ol>
+        <div className="workflow-layout">
+          <section className="panel workflow-panel">
+            <div className="section-title">
+              <div>
+                <p className="eyebrow">STEP 0{d.step} / 04</p>
+                <h2>{steps[d.step - 1].label}</h2>
+              </div>
+              <Tag accent>{d.discipline.toUpperCase()}</Tag>
+            </div>
+            {p.error && (
+              <Notice tone={p.status === "unavailable" ? "info" : "error"}>
+                {p.error}
+              </Notice>
+            )}
+            {d.step === 1 && (
+              <VideoPicker
+                video={video}
+                maxMB={p.maxMB}
+                error={p.videoError}
+                onSelect={p.onSelect}
+                onReady={p.onReady}
+                onError={p.onVideoError}
+                onRemove={p.onRemove}
+              />
+            )}
+            {d.step === 2 && (
+              <div className="form-stack">
+                <label>
+                  Fighter name or identifier
+                  <input
+                    value={d.fighterName}
+                    maxLength={120}
+                    onChange={(e) => update({ fighterName: e.target.value })}
+                    placeholder="e.g. Alex / athlete 01"
+                    autoComplete="off"
+                  />
+                </label>
+                <fieldset>
+                  <legend>Who are we evaluating?</legend>
+                  <div className="selection-grid">
+                    {methods.map(([value, label, description]) => (
+                      <label
+                        key={value}
+                        className={`selection-card ${d.method === value ? "selected" : ""}`}
+                      >
+                        <input
+                          type="radio"
+                          name="fighter"
+                          value={value}
+                          checked={d.method === value}
+                          onChange={() => {
+                            update({ method: value });
+                          }}
+                        />
+                        <div>
+                          <strong>{label}</strong>
+                          <small>{description}</small>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <Notice>
+                  Corner and screen position are identification hints, not
+                  verified tracking. Fighters change sides; automatic identity
+                  tracking is not connected.
+                </Notice>
+                {d.method && video?.ready && (
+                  <div>
+                    <h3>Mark a representative frame</h3>
+                    <p className="muted">
+                      Pause the footage, then tap or click your fighter. A
+                      normalized point and video time are saved as a reference;
+                      this does not track the fighter.
+                    </p>
+                    <div className="frame-picker">
+                      <video
+                        ref={player}
+                        controls
+                        playsInline
+                        src={video.url}
+                        aria-label="Fighter identification video"
+                        onTimeUpdate={(e) =>
+                          setPlayerTime(e.currentTarget.currentTime)
                         }
                       />
-                      <strong>{label}</strong>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-              <div>
-                <h3>Your technical dimensions</h3>
-                <div className="metric-chips">
-                  {metricsFor(d.discipline, d.ruleset).map((m) => (
-                    <span
-                      className={!m.applicable ? "not-applicable" : ""}
-                      key={m.id}
-                      title={m.description}
+                      <button
+                        className="frame-overlay"
+                        aria-label="Mark fighter in paused video"
+                        onClick={(e) => {
+                          const v = player.current;
+                          if (!v || v.readyState < 2) return;
+                          p.onError("");
+                          v.pause();
+                          const box = v.getBoundingClientRect();
+                          p.onFrame({
+                            time: v.currentTime,
+                            x:
+                              e.detail === 0
+                                ? 0.5
+                                : Math.min(
+                                    1,
+                                    Math.max(
+                                      0,
+                                      (e.clientX - box.left) / box.width,
+                                    ),
+                                  ),
+                            y:
+                              e.detail === 0
+                                ? 0.5
+                                : Math.min(
+                                    1,
+                                    Math.max(
+                                      0,
+                                      (e.clientY - box.top) / box.height,
+                                    ),
+                                  ),
+                          });
+                        }}
+                      >
+                        {p.frame &&
+                          Math.abs(playerTime - p.frame.time) < 0.25 && (
+                            <span
+                              className="frame-point"
+                              style={{
+                                left: `${p.frame.x * 100}%`,
+                                top: `calc(${p.frame.y * 100}% + ${52 * p.frame.y}px)`,
+                              }}
+                            >
+                              +
+                            </span>
+                          )}
+                      </button>
+                    </div>
+                    <button
+                      className="button secondary"
+                      onClick={() => {
+                        const v = player.current;
+                        if (v && v.readyState >= 2) {
+                          v.pause();
+                          p.onFrame({ time: v.currentTime, x: 0.5, y: 0.5 });
+                        }
+                      }}
                     >
-                      {m.label}
-                      {!m.applicable ? " · N/A" : ""}
-                    </span>
-                  ))}
+                      Use current frame center
+                    </button>
+                    {p.frame && (
+                      <p className="success-text">
+                        Reference selected at {formatTime(p.frame.time)}. Point
+                        saved; identity unverified.
+                      </p>
+                    )}
+                    <ul className="identity-references">
+                      {p.frames.map((f, i) => (
+                        <li key={i}>
+                          <span>
+                            Frame {i + 1} · {formatTime(f.time)} · identity hint
+                          </span>
+                          <button
+                            type="button"
+                            className="icon-button"
+                            aria-label={`Remove identity frame ${i + 1}`}
+                            onClick={() => p.onRemoveFrame(i)}
+                          >
+                            ×
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="subtle-note">
+                      Add up to five references at different moments, including
+                      before and after position changes. A new selection near
+                      the same time replaces that reference. Older references
+                      rotate out after five. Tracking remains unverified.
+                    </p>
+                  </div>
+                )}
+                <label>
+                  Identification notes{" "}
+                  <span className="muted">
+                    {d.method === "manual"
+                      ? "(required if no frame selected)"
+                      : "(optional)"}
+                  </span>
+                  <textarea
+                    maxLength={2000}
+                    rows={3}
+                    value={d.notes}
+                    onChange={(e) => update({ notes: e.target.value })}
+                    placeholder="Glove color, shorts, equipment, or other visible identifying details…"
+                  />
+                </label>
+              </div>
+            )}
+            {d.step === 3 && (
+              <div className="form-stack">
+                <fieldset>
+                  <legend>Discipline</legend>
+                  <div className="segmented inline">
+                    {(["boxing", "kickboxing"] as const).map((x) => (
+                      <button
+                        key={x}
+                        aria-pressed={d.discipline === x}
+                        onClick={() =>
+                          update({
+                            discipline: x,
+                            ruleset: "k1",
+                            rulesetNotes: "",
+                          })
+                        }
+                      >
+                        {x}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+                {d.discipline === "kickboxing" && (
+                  <>
+                    <label>
+                      Competitive ruleset
+                      <select
+                        value={d.ruleset}
+                        onChange={(e) =>
+                          update({
+                            ruleset: e.target.value as Ruleset,
+                            rulesetNotes: "",
+                          })
+                        }
+                      >
+                        {Object.entries(rulesetLabels).map(([k, v]) => (
+                          <option key={k} value={k}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      {d.ruleset === "custom"
+                        ? "Describe permitted techniques and restrictions"
+                        : "Ruleset clarification (optional)"}
+                      <textarea
+                        rows={2}
+                        value={d.rulesetNotes}
+                        maxLength={2000}
+                        onChange={(e) =>
+                          update({ rulesetNotes: e.target.value })
+                        }
+                        placeholder="Specify local variations, knee or clinch restrictions, and legal targets."
+                      />
+                    </label>
+                    <p className="subtle-note">
+                      Knees are enabled only for K-1 style. Checks are not
+                      assessed under full-contact or unspecified custom rules. A
+                      future engine must verify the exact competition rules
+                      before scoring.
+                    </p>
+                  </>
+                )}
+                <fieldset>
+                  <legend>Analysis focus</legend>
+                  <div className="selection-grid">
+                    {Object.entries(analysisTypes).map(([value, label]) => (
+                      <label
+                        className={`selection-card ${d.type === value ? "selected" : ""}`}
+                        key={value}
+                      >
+                        <input
+                          type="radio"
+                          name="type"
+                          value={value}
+                          checked={d.type === value}
+                          onChange={() =>
+                            update({ type: value as SavedDraft["type"] })
+                          }
+                        />
+                        <strong>{label}</strong>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <div>
+                  <h3>Your technical dimensions</h3>
+                  <div className="metric-chips">
+                    {metricsFor(d.discipline, d.ruleset).map((m) => (
+                      <span
+                        className={!m.applicable ? "not-applicable" : ""}
+                        key={m.id}
+                        title={m.description}
+                      >
+                        {m.label}
+                        {!m.applicable ? " · N/A" : ""}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-          {d.step === 4 && (
-            <div className="form-stack">
-              <div className="review-summary">
-                <h3>Ready for a new perspective.</h3>
-                <dl>
-                  <div>
-                    <dt>Footage</dt>
-                    <dd>{video?.asset.name ?? "No footage selected"}</dd>
-                  </div>
-                  <div>
-                    <dt>Fighter</dt>
-                    <dd>
-                      {d.fighterName || "Not identified"}
-                      {d.method &&
-                        ` · ${methods.find((m) => m[0] === d.method)?.[1]}`}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Discipline</dt>
-                    <dd className="capitalize">
-                      {d.discipline}
-                      {d.discipline === "kickboxing"
-                        ? ` · ${rulesetLabels[d.ruleset]}`
-                        : ""}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Focus</dt>
-                    <dd>{analysisTypes[config.type]}</dd>
-                  </div>
-                  <div>
-                    <dt>Identity tracking</dt>
-                    <dd>Not verified</dd>
-                  </div>
-                  <div>
-                    <dt>File status</dt>
-                    <dd>
-                      {video?.ready
-                        ? "Local preview ready · Not uploaded"
-                        : "Select footage again"}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-              <Notice>
-                The analysis engine requires integration. You can validate this
-                setup, but no video will be uploaded and no assessment will be
-                generated.
-              </Notice>
-              <button
-                className="button full"
-                disabled={["uploading", "queued", "processing"].includes(
-                  p.status,
-                )}
-                onClick={p.onSubmit}
-              >
-                <Sparkles size={18} />{" "}
-                {["uploading", "queued", "processing"].includes(p.status)
-                  ? "Submitting…"
-                  : "Generate performance analysis"}
-              </button>
-              <p className="subtle-note">
-                No provider keys or paid services are configured. Your setup is
-                preserved if submission is unavailable.
-              </p>
-            </div>
-          )}
-          <div className="workflow-actions">
-            <button
-              className="button secondary"
-              disabled={d.step === 1}
-              onClick={() => {
-                p.onError("");
-                update({ step: d.step - 1 });
-              }}
-            >
-              <ArrowLeft size={16} /> Back
-            </button>
-            {d.step < 4 && (
-              <button className="button" onClick={next}>
-                Continue <ArrowRight size={16} />
-              </button>
             )}
-          </div>
-        </section>
-        <aside className="workflow-aside">
-          <div className="panel">
-            <Crosshair className="blue" size={25} />
-            <h3>
-              Clarity starts
-              <br />
-              with good footage.
-            </h3>
-            <ul className="tips-list">
-              <li>Keep both fighters visible.</li>
-              <li>Use stable, well-lit footage.</li>
-              <li>Include the full exchange, with entries and exits.</li>
-              <li>Identify your fighter with specific, visible details.</li>
-            </ul>
-          </div>
-          <div className="aside-note">
-            <LockKeyhole size={18} />
-            <div>
-              <strong>Your local workspace</strong>
-              <p>
-                Configuration is saved in this browser. Footage stays in memory
-                for this session. There is no account or cloud storage yet.
-              </p>
+            {d.step === 4 && (
+              <div className="form-stack">
+                <div className="review-summary">
+                  <h3>Ready for a new perspective.</h3>
+                  <dl>
+                    <div>
+                      <dt>Footage</dt>
+                      <dd>{video?.asset.name ?? "No footage selected"}</dd>
+                    </div>
+                    <div>
+                      <dt>Fighter</dt>
+                      <dd>
+                        {d.fighterName || "Not identified"}
+                        {d.method &&
+                          ` · ${methods.find((m) => m[0] === d.method)?.[1]}`}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Discipline</dt>
+                      <dd className="capitalize">
+                        {d.discipline}
+                        {d.discipline === "kickboxing"
+                          ? ` · ${rulesetLabels[d.ruleset]}`
+                          : ""}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Focus</dt>
+                      <dd>{analysisTypes[config.type]}</dd>
+                    </div>
+                    <div>
+                      <dt>Identity tracking</dt>
+                      <dd>Not verified</dd>
+                    </div>
+                    <div>
+                      <dt>File status</dt>
+                      <dd>
+                        {!video?.ready
+                          ? "Select footage again"
+                          : p.status === "uploading"
+                            ? "Sending to the connected backend"
+                            : ["queued", "processing"].includes(p.status)
+                              ? "Upload completed · Server processing"
+                              : ["failed", "canceled"].includes(p.status)
+                                ? "Local preview ready · Check backend request status"
+                                : p.status === "completed"
+                                  ? "Analysis completed"
+                                  : p.status === "ready"
+                                    ? "Ready for submission · Local preview"
+                                    : "Local preview ready · Not uploaded"}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+                <Notice>
+                  {p.engineAvailable
+                    ? "Connected boxing pilot: generating sends this clip to your backend and sampled frames to its provider. Source files are deleted after processing; temporary reports expire after 15 minutes. Only qualitative findings are returned. No continuous tracking, exact event timing, or scoring is claimed."
+                    : "The analysis engine requires integration. You can validate this setup, but no video will be uploaded and no assessment will be generated."}
+                </Notice>
+                <button
+                  className="button full"
+                  disabled={[
+                    "ready",
+                    "uploading",
+                    "queued",
+                    "processing",
+                  ].includes(p.status)}
+                  onClick={p.onSubmit}
+                >
+                  <Sparkles size={18} />{" "}
+                  {["ready", "uploading", "queued", "processing"].includes(
+                    p.status,
+                  )
+                    ? "Submitting…"
+                    : "Generate performance analysis"}
+                </button>
+                <p className="subtle-note">
+                  {p.engineAvailable
+                    ? "Provider usage may have a cost. Submit only footage you have permission to process. Server-side credentials never enter this browser."
+                    : "No provider keys or paid services are configured. Your setup is preserved if submission is unavailable."}
+                </p>
+              </div>
+            )}
+            <div className="workflow-actions">
+              <button
+                className="button secondary"
+                disabled={d.step === 1}
+                onClick={() => {
+                  p.onError("");
+                  update({ step: d.step - 1 });
+                }}
+              >
+                <ArrowLeft size={16} /> Back
+              </button>
+              {d.step < 4 && (
+                <button className="button" onClick={next}>
+                  Continue <ArrowRight size={16} />
+                </button>
+              )}
             </div>
-          </div>
-        </aside>
-      </div>
+          </section>
+          <aside className="workflow-aside">
+            <div className="panel">
+              <Crosshair className="blue" size={25} />
+              <h3>
+                Clarity starts
+                <br />
+                with good footage.
+              </h3>
+              <ul className="tips-list">
+                <li>Keep both fighters visible.</li>
+                <li>Use stable, well-lit footage.</li>
+                <li>Include the full exchange, with entries and exits.</li>
+                <li>Identify your fighter with specific, visible details.</li>
+              </ul>
+            </div>
+            <div className="aside-note">
+              <LockKeyhole size={18} />
+              <div>
+                <strong>Your local workspace</strong>
+                <p>
+                  Configuration is saved in this browser. Footage stays in
+                  memory for this session. There is no account or cloud storage
+                  yet.
+                </p>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </fieldset>
+      {busy && (
+        <button className="button secondary" onClick={p.onCancel}>
+          Cancel analysis
+        </button>
+      )}
     </>
   );
 }

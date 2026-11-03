@@ -42,3 +42,7 @@ Scores and factual accuracy require provider-side validation beyond this structu
 Keep provider keys server-side. Add real auth, authorization, CORS/CSRF controls appropriate to the chosen transport, upload quotas, worker isolation, retention/deletion controls, threat monitoring, and independent model validation. Use HTTPS. Configure signed video delivery without exposing permanent credentials. No sensitive provider token may be prefixed with `VITE_` or bundled into this static frontend.
 
 The current report reader only accepts local reattached footage. Cloud playback requires an authenticated video asset adapter, expiry handling, ownership checks, and stronger identity checks (e.g. hashes) before claiming footage provenance. No unnecessary empty server routes were added.
+
+## Phase 2 implementation update
+
+The original unavailable adapter remains the default. The authenticated HTTP adapter, Node upload/job service, ffmpeg frame preparation, Gemini provider boundary and qualitative report conversion are now implemented. Read [PHASE2-INTEGRATION.md](PHASE2-INTEGRATION.md) for the current executable pipeline, 10–300-second limits, exact privacy boundaries, cost assumptions and live-validation requirements. Earlier sections describe the full production target; account isolation, durable jobs, real tracking and numeric scoring remain unimplemented. No live provider result has been validated.

@@ -5,7 +5,11 @@ import {
   type FighterIdentification,
 } from "../domain/contracts";
 import { validateVideoFile, type LocalVideo } from "../domain/video";
-import { analysisService } from "../services/analysis";
+import {
+  analysisService,
+  connectAnalysisService,
+  type AnalysisService,
+} from "../services/analysis";
 import {
   DRAFT_KEY,
   PREFERENCE_KEY,
@@ -24,6 +28,34 @@ import {
 } from "../services/storage";
 
 export function useWorkspace() {
+  const [service, setService] = useState<AnalysisService>(analysisService);
+  const [engine, setEngine] = useState<{
+    connected: boolean;
+    available: boolean;
+    message: string;
+  }>({ connected: false, available: false, message: "Integration required" });
+  const connectEngine = async (url: string, token: string) => {
+    const result = await connectAnalysisService(url, token);
+    setService(() => result.service);
+    setEngine({
+      connected: true,
+      available: result.health.available,
+      message: result.health.message,
+    });
+  };
+  const disconnectEngine = () => {
+    if (submitting.current) return;
+    setService(analysisService);
+    setEngine({
+      connected: false,
+      available: false,
+      message: "Integration required",
+    });
+  };
+  const pending = useRef<AbortController | null>(null);
+  const currentJob = useRef<string | null>(null);
+  const subjectId = useRef(crypto.randomUUID());
+
   const [initial] = useState(() => {
     const preferences = readStored<Preferences>(
       PREFERENCE_KEY,
@@ -40,12 +72,42 @@ export function useWorkspace() {
   });
   const [preferences, setPreferences] = useState(initial.preferences.value);
   const [draft, setDraft] = useState(initial.draft.value);
-  const [reports, setReports] = useState(initial.reports.value);
+  const [reports, setReportsState] = useState(initial.reports.value);
+  const reportsRef = useRef(reports);
+  const setReports = (next: typeof reports) => {
+    reportsRef.current = next;
+    setReportsState(next);
+  };
   const [video, setVideo] = useState<LocalVideo | null>(null);
   const [videoError, setVideoError] = useState("");
   const [error, setError] = useState("");
   const [status, setStatus] = useState<AnalysisStatus>("not-started");
-  const [frame, setFrame] = useState<FighterIdentification["frame"]>();
+  const [frames, setFrames] = useState<
+    NonNullable<FighterIdentification["confirmationFrames"]>
+  >([]);
+  const frame = frames.at(-1);
+  const setFrame = (f: FighterIdentification["frame"]) => {
+    if (submitting.current) return;
+    if (!f) {
+      setFrames([]);
+      return;
+    }
+    setFrames((previous) => {
+      const distinct = previous.filter((p) => Math.abs(p.time - f.time) > 0.15);
+      return [...distinct, f].slice(-5);
+    });
+  };
+  const removeFrame = (index: number) => {
+    if (!submitting.current)
+      setFrames((previous) => previous.filter((_, i) => i !== index));
+  };
+  useEffect(
+    () => () => {
+      pending.current?.abort();
+    },
+    [],
+  );
+
   const [message, setMessage] = useState(
     [initial.preferences.error, initial.draft.error, initial.reports.error]
       .filter(Boolean)
@@ -145,6 +207,7 @@ export function useWorkspace() {
     const d = { ...draft, step: 1, method: "" as const, notes: "" };
     setDraft(d);
     persist(DRAFT_KEY, d);
+    subjectId.current = crypto.randomUUID();
     setVideo({
       file,
       url: URL.createObjectURL(file),
@@ -169,10 +232,13 @@ export function useWorkspace() {
     persist(DRAFT_KEY, d);
   };
   const onReady = (duration: number) => {
+    const valid = duration >= 10 && duration <= 300;
     setVideo((v) =>
-      v ? { ...v, asset: { ...v.asset, duration }, ready: true } : null,
+      v ? { ...v, asset: { ...v.asset, duration }, ready: valid } : null,
     );
-    setVideoError("");
+    setVideoError(
+      valid ? "" : "Choose footage from 10 seconds to 5 minutes long.",
+    );
   };
   const configuration = () =>
     configSchema.safeParse({
@@ -185,6 +251,13 @@ export function useWorkspace() {
         method: draft.method,
         notes: draft.notes,
         frame,
+        confirmationFrames: frames,
+        subjectId: subjectId.current,
+        tracking: {
+          identityIndependentOfPosition: true,
+          status: "unverified",
+          challenges: ["camera-movement", "occlusion", "position-change"],
+        },
       },
     });
   const validateStep = (step: number) => {
@@ -217,27 +290,108 @@ export function useWorkspace() {
     submitting.current = true;
     setStatus("ready");
     setError("");
+    const abort = new AbortController();
+    pending.current = abort;
+    const snapshot = structuredClone(c.data);
+    const submittedVideo = { ...video.asset };
     try {
-      await analysisService.submit({
-        file: video.file,
-        video: { ...video.asset },
-        configuration: structuredClone(c.data),
-      });
-      setError(
-        "The connected service returned an unsupported result. Integration must handle job monitoring before it is enabled.",
+      let job = await service.submit(
+        { file: video.file, video: submittedVideo, configuration: snapshot },
+        abort.signal,
+        () => setStatus("uploading"),
       );
-      setStatus("failed");
+      currentJob.current = job.id;
+      setStatus(job.status);
+      const deadline = Date.now() + 5 * 60 * 1000;
+      while (
+        ["queued", "processing", "uploading", "ready"].includes(job.status)
+      ) {
+        if (Date.now() > deadline)
+          throw new Error(
+            "Monitoring timed out. Check the backend before resubmitting; the job may still be running.",
+          );
+        await new Promise<void>((resolve, reject) => {
+          const done = () => {
+            abort.signal.removeEventListener("abort", cancel);
+            resolve();
+          };
+          const timer = setTimeout(done, 1500);
+          const cancel = () => {
+            clearTimeout(timer);
+            reject(new DOMException("Canceled", "AbortError"));
+          };
+          abort.signal.addEventListener("abort", cancel, { once: true });
+        });
+        job = await service.status(job.id, abort.signal);
+        setStatus(job.status);
+      }
+      if (job.status === "canceled") {
+        setError("Analysis canceled. No incomplete report was saved.");
+        return;
+      }
+      if (job.status !== "completed")
+        throw new Error(
+          job.error ?? "Analysis failed. Your setup is preserved.",
+        );
+      const report = await service.report(job.reportId ?? job.id, abort.signal);
+      if (
+        JSON.stringify(report.configuration) !== JSON.stringify(snapshot) ||
+        report.video.id !== submittedVideo.id
+      )
+        throw new Error(
+          "The report does not match the submitted fighter and footage. It was not saved.",
+        );
+      const currentReports = reportsRef.current;
+      const next = currentReports.some((r) => r.id === report.id)
+        ? currentReports
+        : importReports(report, currentReports);
+      if (blocked.current.has(REPORTS_KEY))
+        throw new Error(
+          "Export and clear the invalid saved library before saving the completed result.",
+        );
+      const problem = saveReports(next);
+      if (problem) {
+        setReports(next);
+        setMessage(
+          problem +
+            " The completed report is available in this session; export it now.",
+        );
+      } else setReports(next);
+      setStatus("completed");
+      location.hash = `/report/${encodeURIComponent(report.id)}`;
     } catch (e) {
       setError(
         e instanceof Error
           ? e.message
-          : "Submission failed. Your setup has been preserved.",
+          : "Submission failed. Your setup is preserved.",
       );
       setStatus(
-        analysisService.capabilities.available ? "failed" : "unavailable",
+        abort.signal.aborted
+          ? "canceled"
+          : service.capabilities.available
+            ? "failed"
+            : "unavailable",
       );
     } finally {
       submitting.current = false;
+      pending.current = null;
+      currentJob.current = null;
+    }
+  };
+  const cancelAnalysis = async () => {
+    try {
+      if (currentJob.current) await service.cancel(currentJob.current);
+      pending.current?.abort();
+      setStatus("canceled");
+      setError(
+        "Analysis canceled. Remote cancellation is best effort; processing already sent to a provider may still incur usage.",
+      );
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Cancellation failed. Monitoring continues.",
+      );
     }
   };
   const importData = (data: unknown) => {
@@ -286,6 +440,13 @@ export function useWorkspace() {
   };
   const clearWorkspace = () => {
     try {
+      if (submitting.current) {
+        setMessage(
+          "Cancel the current analysis before clearing the workspace.",
+        );
+        return;
+      }
+      disconnectEngine();
       for (const key of [REPORTS_KEY, DRAFT_KEY, PREFERENCE_KEY])
         localStorage.removeItem(key);
       blocked.current.clear();
@@ -313,6 +474,12 @@ export function useWorkspace() {
     error,
     status,
     frame,
+    frames,
+    removeFrame,
+    engine,
+    connectEngine,
+    disconnectEngine,
+    cancelAnalysis,
     message,
     submitting,
     updateDraft,

@@ -1,14 +1,23 @@
 import { useState } from "react";
-import { Download, ShieldCheck, UserRound } from "lucide-react";
+import { Download, ShieldCheck } from "lucide-react";
+import { EngineConnection, type EngineState } from "./EngineConnection";
 import type { Preferences } from "../services/storage";
-import { EmptyState, Notice, PageHeading, SectionTitle } from "./ui";
+import { Notice, PageHeading, SectionTitle } from "./ui";
 export function Settings({
   preferences,
   onSave,
   onClear,
   onExport,
+  engine,
+  onConnect,
+  onDisconnect,
+  busy,
 }: {
   preferences: Preferences;
+  engine: EngineState;
+  onConnect: (url: string, token: string) => Promise<void>;
+  onDisconnect: () => void;
+  busy: boolean;
   onSave: (p: Preferences) => void;
   onClear: () => void;
   onExport: () => void;
@@ -78,8 +87,8 @@ export function Settings({
               />
             </label>
             <p className="subtle-note">
-              Default: 500 MB. Large files can exceed device memory. A future
-              server must enforce its own upload limits.
+              Default: 500 MB. Large files can exceed device memory. The pilot
+              backend enforces a separate 100 MB upload limit.
             </p>
             {error && <Notice tone="error">{error}</Notice>}
             {saved && (
@@ -93,17 +102,12 @@ export function Settings({
             </button>
           </form>
         </section>
-        <section className="panel">
-          <SectionTitle
-            title="Account & analysis engine"
-            label="INTEGRATION STATUS"
-          />
-          <EmptyState title="A personal, local workspace">
-            <UserRound size={22} /> Authentication, cloud storage, and automated
-            video analysis are not connected. No account is created and no
-            footage is sent to a server.
-          </EmptyState>
-        </section>
+        <EngineConnection
+          engine={engine}
+          onConnect={onConnect}
+          onDisconnect={onDisconnect}
+          disabled={busy}
+        />
         <section className="panel">
           <SectionTitle
             title="Your data, on this device"
@@ -158,6 +162,9 @@ export function Settings({
           </div>
         </section>
         <section className="panel">
+          <a className="quiet-link" href="#/about">
+            About Feint Labs →
+          </a>
           <ShieldCheck className="blue" size={26} />
           <h2>Evidence is the standard.</h2>
           <p>

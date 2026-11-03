@@ -45,11 +45,14 @@ try {
     throw new Error("Missing JavaScript or CSS asset requests.");
   if (assets.some((a) => a.status !== 200))
     throw new Error(`Asset requests failed: ${JSON.stringify(assets)}`);
-  await page.getByRole("link", { name: "Start new analysis" }).click();
+  await page
+    .getByRole("main")
+    .getByRole("link", { name: "Use identifierQ", exact: true })
+    .click();
   await page
     .getByRole("heading", { name: "Upload footage", exact: true })
     .waitFor();
-  for (const path of ["/history", "/report", "/settings", "/"]) {
+  for (const path of ["/history", "/report", "/settings", "/about", "/"]) {
     await page.goto(`${target.href}#${path}`);
     await page.locator("h1").waitFor();
     if (new URL(page.url()).pathname !== target.pathname)
@@ -67,7 +70,7 @@ try {
         result: "passed",
         assets,
         navigation:
-          "dashboard, new analysis, history, report, settings, reload",
+          "dashboard, new analysis, history, report, settings, about, reload",
         pageErrors: errors,
       },
       null,
