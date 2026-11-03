@@ -9,13 +9,9 @@ export function runtimeConfig(env: NodeJS.ProcessEnv = process.env) {
   if (cloudRun && host !== "0.0.0.0")
     throw new Error("Cloud Run requires HOST=0.0.0.0.");
   const maxUploadMB = Number(
-    env.MAX_UPLOAD_MB ?? (cloudRun ? 25 : PILOT_LIMITS.maxBytes / 1024 / 1024),
+    env.MAX_UPLOAD_MB ?? PILOT_LIMITS.maxBytes / 1024 / 1024,
   );
-  if (!Number.isInteger(maxUploadMB) || maxUploadMB < 1 || maxUploadMB > 100)
-    throw new Error("MAX_UPLOAD_MB must be a whole number from 1 to 100.");
-  if (cloudRun && maxUploadMB > 30)
-    throw new Error(
-      "This HTTP/1 Cloud Run pilot requires MAX_UPLOAD_MB <= 30; use the recommended 25 MiB setting.",
-    );
+  if (!Number.isInteger(maxUploadMB) || maxUploadMB < 1 || maxUploadMB > 25)
+    throw new Error("MAX_UPLOAD_MB must be a whole number from 1 to 25.");
   return { port, host, maxUploadBytes: maxUploadMB * 1024 * 1024 };
 }

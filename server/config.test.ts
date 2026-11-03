@@ -20,13 +20,13 @@ describe("Cloud Run runtime settings", () => {
     ).toBe(25 * 1024 * 1024);
     expect(() =>
       runtimeConfig({ K_SERVICE: "api", MAX_UPLOAD_MB: "100" }),
-    ).toThrow("HTTP/1");
+    ).toThrow("1 to 25");
   });
   it("retains loopback defaults for direct local startup", () => {
     expect(runtimeConfig({})).toEqual({
       host: "127.0.0.1",
       port: 8787,
-      maxUploadBytes: 100 * 1024 * 1024,
+      maxUploadBytes: 25 * 1024 * 1024,
     });
   });
   it("rejects unusable ports, limits and Cloud Run loopback binding", () => {

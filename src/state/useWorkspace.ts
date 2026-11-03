@@ -1,3 +1,5 @@
+import { AnalysisJobFailure } from "../services/analysisStream";
+import { stageLabels } from "../domain/transport";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   configSchema,
@@ -54,6 +56,7 @@ export function useWorkspace() {
   };
   const pending = useRef<AbortController | null>(null);
   const currentJob = useRef<string | null>(null);
+  const requestSequence = useRef(0);
   const subjectId = useRef(crypto.randomUUID());
 
   const [initial] = useState(() => {
@@ -81,6 +84,7 @@ export function useWorkspace() {
   const [video, setVideo] = useState<LocalVideo | null>(null);
   const [videoError, setVideoError] = useState("");
   const [error, setError] = useState("");
+  const [processingDetail, setProcessingDetail] = useState("");
   const [status, setStatus] = useState<AnalysisStatus>("not-started");
   const [frames, setFrames] = useState<
     NonNullable<FighterIdentification["confirmationFrames"]>
@@ -288,6 +292,7 @@ export function useWorkspace() {
     const c = configuration();
     if (!c.success || !video) return;
     submitting.current = true;
+    requestSequence.current++;
     setStatus("ready");
     setError("");
     const abort = new AbortController();
@@ -295,36 +300,25 @@ export function useWorkspace() {
     const snapshot = structuredClone(c.data);
     const submittedVideo = { ...video.asset };
     try {
-      let job = await service.submit(
+      const job = await service.submit(
         { file: video.file, video: submittedVideo, configuration: snapshot },
         abort.signal,
         () => setStatus("uploading"),
+        (update) => {
+          if (abort.signal.aborted) return;
+          currentJob.current = update.id;
+          setStatus(update.status);
+          setProcessingDetail(
+            update.stage
+              ? stageLabels[update.stage]
+              : "Processing your request",
+          );
+        },
       );
+      if (abort.signal.aborted)
+        throw new DOMException("Analysis canceled.", "AbortError");
       currentJob.current = job.id;
       setStatus(job.status);
-      const deadline = Date.now() + 5 * 60 * 1000;
-      while (
-        ["queued", "processing", "uploading", "ready"].includes(job.status)
-      ) {
-        if (Date.now() > deadline)
-          throw new Error(
-            "Monitoring timed out. Check the backend before resubmitting; the job may still be running.",
-          );
-        await new Promise<void>((resolve, reject) => {
-          const done = () => {
-            abort.signal.removeEventListener("abort", cancel);
-            resolve();
-          };
-          const timer = setTimeout(done, 1500);
-          const cancel = () => {
-            clearTimeout(timer);
-            reject(new DOMException("Canceled", "AbortError"));
-          };
-          abort.signal.addEventListener("abort", cancel, { once: true });
-        });
-        job = await service.status(job.id, abort.signal);
-        setStatus(job.status);
-      }
       if (job.status === "canceled") {
         setError("Analysis canceled. No incomplete report was saved.");
         return;
@@ -366,7 +360,8 @@ export function useWorkspace() {
           : "Submission failed. Your setup is preserved.",
       );
       setStatus(
-        abort.signal.aborted
+        abort.signal.aborted ||
+          (e instanceof AnalysisJobFailure && e.job.status === "canceled")
           ? "canceled"
           : service.capabilities.available
             ? "failed"
@@ -376,23 +371,26 @@ export function useWorkspace() {
       submitting.current = false;
       pending.current = null;
       currentJob.current = null;
+      setProcessingDetail("");
     }
   };
   const cancelAnalysis = async () => {
-    try {
-      if (currentJob.current) await service.cancel(currentJob.current);
-      pending.current?.abort();
-      setStatus("canceled");
-      setError(
-        "Analysis canceled. Remote cancellation is best effort; processing already sent to a provider may still incur usage.",
-      );
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Cancellation failed. Monitoring continues.",
-      );
-    }
+    const cancelSequence = requestSequence.current;
+    pending.current?.abort();
+    setStatus("canceled");
+    setError(
+      "Analysis canceled locally. Provider work already started may still incur usage.",
+    );
+    const id = currentJob.current;
+    if (id)
+      try {
+        await service.cancel(id);
+      } catch {
+        if (requestSequence.current !== cancelSequence) return;
+        setError(
+          "The local request was canceled, but remote cancellation could not be confirmed. No incomplete report was saved; check usage before retrying.",
+        );
+      }
   };
   const importData = (data: unknown) => {
     try {
@@ -473,6 +471,7 @@ export function useWorkspace() {
     videoError,
     error,
     status,
+    processingDetail,
     frame,
     frames,
     removeFrame,

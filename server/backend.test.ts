@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBackend } from "./app";
@@ -89,13 +89,26 @@ function form(data: ReturnType<typeof metadata>) {
   );
   return f;
 }
-async function submit(base: string, data = metadata(), key = randomUUID()) {
+async function begin(base: string, data = metadata(), key = randomUUID()) {
   const response = await fetch(base + "/analyses", {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "idempotency-key": key },
     body: form(data),
   });
-  return { response, body: await response.json(), data, key };
+  return { response, data, key };
+}
+async function collect(response: Response) {
+  if (!response.headers.get("content-type")?.includes("application/x-ndjson"))
+    return response.json();
+  const events = (await response.text())
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  return { ...events.at(-1).job, inlineReport: events.at(-1).report, events };
+}
+async function submit(base: string, data = metadata(), key = randomUUID()) {
+  const result = await begin(base, data, key);
+  return { ...result, body: await collect(result.response) };
 }
 async function finish(base: string, id: string) {
   for (let i = 0; i < 100; i++) {
@@ -130,7 +143,7 @@ describe("authenticated live-transport foundation (synthetic provider only)", ()
     expect(health.limits).toEqual({
       minSeconds: 10,
       maxSeconds: 300,
-      maxBytes: 100 * 1024 * 1024,
+      maxBytes: 25 * 1024 * 1024,
     });
     expect(health.tracking).toBe(false);
   });
@@ -143,7 +156,7 @@ describe("authenticated live-transport foundation (synthetic provider only)", ()
     const analyze = vi.fn(provider.analyze);
     const base = await start({ provider: { ...provider, analyze } });
     const result = await submit(base);
-    expect(result.response.status).toBe(202);
+    expect(result.response.status).toBe(200);
     const job = await finish(base, result.body.id);
     expect(job.status).toBe("completed");
     const report = await (
@@ -228,16 +241,16 @@ describe("authenticated live-transport foundation (synthetic provider only)", ()
         ),
     };
     const base = await start({ provider: stalled });
-    const result = await submit(base);
-    const canceled = await fetch(`${base}/analyses/${result.body.id}`, {
+    const result = await begin(base);
+    const canceled = await fetch(`${base}/analyses/${result.key}`, {
       method: "DELETE",
       headers: { authorization: `Bearer ${token}` },
     });
     expect(canceled.status).toBe(200);
-    expect((await finish(base, result.body.id)).status).toBe("canceled");
+    expect((await collect(result.response)).status).toBe("canceled");
     expect(
       (
-        await fetch(`${base}/analyses/${result.body.id}/report`, {
+        await fetch(`${base}/analyses/${result.key}/report`, {
           headers: { authorization: `Bearer ${token}` },
         })
       ).status,
@@ -254,12 +267,13 @@ describe("authenticated live-transport foundation (synthetic provider only)", ()
         ),
     };
     const base = await start({ provider: stalled });
-    const first = await submit(base);
+    const first = await begin(base);
     expect((await submit(base)).response.status).toBe(429);
-    await fetch(`${base}/analyses/${first.body.id}`, {
+    await fetch(`${base}/analyses/${first.key}`, {
       method: "DELETE",
       headers: { authorization: `Bearer ${token}` },
     });
+    await collect(first.response);
   });
   it("fails timed-out jobs and invalid evidence without saving a report", async () => {
     const stalled: VideoAnalysisProvider = {
@@ -311,7 +325,7 @@ describe("authenticated live-transport foundation (synthetic provider only)", ()
     await new Promise((r) => setTimeout(r, 5));
     expect(
       (
-        await fetch(`${base}/analyses/${result.body.id}/report`, {
+        await fetch(`${base}/analyses/${result.key}/report`, {
           headers: { authorization: `Bearer ${token}` },
         })
       ).status,
@@ -517,4 +531,94 @@ it("advertises and enforces an instance-specific upload limit before media proce
   expect(response.status).toBe(413);
   expect((await response.json()).message).toContain("1 MB");
   expect(prepare).not.toHaveBeenCalled();
+});
+
+it("keeps the originating request active until the report AND media cleanup are complete", async () => {
+  let release!: (value: ProviderResult) => void;
+  let entered!: () => void;
+  const ready = new Promise<void>((r) => {
+    entered = r;
+  });
+  let directory = "";
+  const base = await start({
+    prepare: async (_, dir) => {
+      directory = dir;
+      return prepared;
+    },
+    provider: {
+      ...provider,
+      analyze: async () => {
+        entered();
+        return new Promise<ProviderResult>((r) => {
+          release = r;
+        });
+      },
+    },
+  });
+  const opened = await begin(base);
+  await ready;
+  const reader = opened.response.body!.getReader();
+  const first = await reader.read();
+  const firstText = new TextDecoder().decode(first.value);
+  expect(firstText).toContain('"type":"job"');
+  expect(firstText).not.toContain('"type":"result"');
+  await expect(access(directory)).resolves.toBeUndefined();
+  release(findings);
+  let text = firstText;
+  while (true) {
+    const next = await reader.read();
+    if (next.done) break;
+    text += new TextDecoder().decode(next.value);
+  }
+  const final = JSON.parse(text.trim().split("\n").at(-1)!);
+  expect(final.type).toBe("result");
+  expect(final.report.id).toBe(opened.key);
+  expect(final.job.status).toBe("completed");
+  await expect(access(directory)).rejects.toThrow();
+});
+it("aborts decoding/provider work when the request disconnects, without persisting a partial report", async () => {
+  let entered!: () => void;
+  const ready = new Promise<void>((r) => {
+    entered = r;
+  });
+  let aborted = false;
+  const base = await start({
+    provider: {
+      ...provider,
+      analyze: async (_, __, signal) => {
+        entered();
+        return new Promise((_, reject) =>
+          signal.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              reject(new Error("Disconnected"));
+            },
+            { once: true },
+          ),
+        );
+      },
+    },
+  });
+  const controller = new AbortController();
+  const key = randomUUID();
+  const data = metadata();
+  const response = await fetch(base + "/analyses", {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "idempotency-key": key },
+    body: form(data),
+    signal: controller.signal,
+  });
+  await ready;
+  controller.abort();
+  await response.text().catch(() => undefined);
+  await expect.poll(() => aborted).toBe(true);
+  expect((await finish(base, key)).status).toBe("canceled");
+  expect(
+    (
+      await fetch(`${base}/analyses/${key}/report`, {
+        headers: { authorization: `Bearer ${token}` },
+      })
+    ).status,
+  ).toBe(409);
 });

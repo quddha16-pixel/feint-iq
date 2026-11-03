@@ -1,4 +1,4 @@
-# Cloud Run preparation — NOT DEPLOYED
+# Low-cost Cloud Run prototype — NOT DEPLOYED
 
 Prepared for **Feint Labs - Identifier Q**, project ID **`feint-identifierq`**, project number **`334840153796`**, region **`us-central1`**. This is a reviewable runbook, not an automatic deployment. The modifying commands below have **not** been executed. Running them later enables services, creates billable resources/secret versions, builds an image and deploys a service. Do not run them until you explicitly approve that work and its cost.
 
@@ -7,9 +7,9 @@ Prepared for **Feint Labs - Identifier Q**, project ID **`feint-identifierq`**, 
 - The container includes ffmpeg/ffprobe and CA certificates, uses production dependencies, and runs as non-root `node`.
 - `server/config.ts` validates the injected `PORT`; the image defaults to 8080, but Cloud Run can override it. Cloud Run binds to **`0.0.0.0`**, not loopback. TLS terminates at Cloud Run; the container speaks HTTP/1.
 - **`GET /livez`** is a minimal unauthenticated HTTP probe returning only `{ "status": "ok" }`. It bypasses the API rate limit so probes do not consume the pilot request allowance. Detailed `/health`, uploads, reports and jobs still require the application bearer token. A provider outage/missing provider does not cause a liveness restart loop.
-- Cloud Run's HTTP/1 request limit is **32 MiB**. This pilot defaults to **25 MiB per file** in Cloud Run and enforces it before decoding/provider usage. Multipart overhead has headroom. The duration range stays **10 seconds–5 minutes**. Non-Cloud-Run deployments retain the earlier 100 MiB default. Explicit Cloud Run limits above 30 MiB are rejected. Larger uploads require a separate resumable object-storage flow or an end-to-end HTTP/2 implementation, neither of which is claimed here.
-- The app sends HTTP 202 and then processes in the background. **Default request-based CPU/scale-to-zero settings are not suitable for this implementation.** The prepared pilot uses instance-based billing, one minimum instance, always-allocated CPU, and a one-instance service limit. The API accepts several HTTP requests for status/cancel/probes while the application itself runs only one analysis worker.
-- Jobs and reports are still in process memory. Even a warm singleton can restart or be replaced; a deployment can temporarily overlap instances. Maximum instances is not a durable queue, absolute spending cap, or guarantee against transient extra instances. In-flight jobs can be lost. Do not redeploy while processing. Durable jobs/storage and owner isolation are prerequisites for a dependable multi-user service.
+- Cloud Run's HTTP/1 request limit is **32 MiB**. This pilot defaults to **25 MiB per file** in Cloud Run and enforces it before decoding/provider usage. Multipart overhead has headroom. The duration range stays **10 seconds–5 minutes**. The default and maximum are now 25 MiB for all deployments; smaller configured limits are allowed. Larger uploads require a separate resumable object-storage flow or an end-to-end HTTP/2 implementation, neither of which is claimed here.
+- The upload request remains open through decoding, Gemini analysis, validation, and temporary-file cleanup. Real status events and the complete report travel in that **same NDJSON response**. There is no detached post-response worker. The prepared prototype uses **request-based billing, min=0, CPU throttling, and max=1**. Status/cancel/probe requests can run concurrently while the application limits heavy analysis to one request per instance.
+- The completed report is delivered inline and immediately saved in browser history; no second request to the same instance is required. Server-side job/status/report caches are optional, short-lived diagnostics, not durable storage. Keep the iPhone tab foreground/unlocked until completion. A disconnect, timeout or instance termination can stop the request; partial results are not saved. If completion must survive closing the phone, use a durable Jobs/storage architecture instead (evaluated in LOW-COST.md). Max instances is not an absolute spending cap and can be temporarily exceeded during infrastructure transitions.
 - No load balancer, VPC/NAT, database, Cloud Tasks queue, footage bucket, domain, or frontend redesign is needed for this private pilot. Gemini Developer API access remains API-key based, not Vertex AI/ADC.
 
 ## Proposed resource settings
@@ -18,11 +18,11 @@ Prepared for **Feint Labs - Identifier Q**, project ID **`feint-identifierq`**, 
 | ----------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | Service           | `identifier-q-api`                                  | Separate from the static frontend                                                                  |
 | Region            | `us-central1`                                       | User requested; no documented reason to change it                                                  |
-| CPU / memory      | 1 vCPU / 2 GiB                                      | ffmpeg plus buffers; one analysis at a time                                                        |
-| Billing           | Instance-based, `--no-cpu-throttling`               | Background work continues after HTTP 202                                                           |
-| Service min / max | 1 / 1                                               | Keep CPU available; limit normal pilot scaling                                                     |
-| HTTP concurrency  | 8                                                   | Allow polling/cancel/probes; extra analyses get application 429                                    |
-| Request timeout   | 600 seconds                                         | Not a background-job timer; app has its own 240-second processing timeout                          |
+| CPU / memory      | 1 vCPU / 2 GiB; startup CPU boost disabled          | FFmpeg and buffers, charged during active requests/startup                                         |
+| Billing           | Request-based, `--cpu-throttling`                   | CPU needed only while a request is active                                                          |
+| Service min / max | **0 / 1**                                           | No permanently warm instance; bound normal scaling                                                 |
+| HTTP concurrency  | 8                                                   | Allow cancel/probes/diagnostic requests; extra analyses get application 429                        |
+| Request timeout   | 600 seconds                                         | Covers upload + processing + cleanup; app processing limit is 240s and client deadline 540s        |
 | Port / host       | injected `PORT` (8080) / `0.0.0.0`                  | Cloud Run container contract                                                                       |
 | Upload limit      | 25 MiB (`MAX_UPLOAD_MB=25`)                         | Stay below HTTP/1's 32 MiB request ceiling                                                         |
 | Startup probe     | `/livez`, 8080; 5s timeout, 10s period, 12 failures | Up to 120 seconds for startup/tool checks                                                          |
@@ -30,7 +30,7 @@ Prepared for **Feint Labs - Identifier Q**, project ID **`feint-identifierq`**, 
 | Authentication    | Public Cloud Run ingress; application bearer auth   | The existing Pages client does not mint Google ID tokens; browser preflight must reach the service |
 | Execution         | second generation                                   | Regular Node/ffmpeg container                                                                      |
 
-**Cost decision required before deployment:** using the published us-central1 instance-based rates of $0.000018/vCPU-second and $0.000002/GiB-second, a continuously warm 1-vCPU/2-GiB instance is approximately **$57 per 30 days before free-tier credits**, plus build, image/source storage, logging/network, Secret Manager and Gemini charges. This is an estimate, not a quote or cap. Budget alerts notify; they do not stop spending. This is a Cloud Run-specific estimate replacing the earlier generic hosting allowance. Lower-cost scale-to-zero operation needs a request-scoped or durable job design first; simply setting min=0 risks interrupting this backend.
+**Revised cost decision:** there is no permanently warm compute baseline. For 1 vCPU / 2 GiB, request-based us-central1 rates give about **$0.00377 per clip** assuming 120 seconds of active upload/processing/response plus 10 seconds of cold-start overhead. That is about **$0.04 / $0.19 / $0.38 for 10 / 50 / 100 clips before free-tier credits**, with Gemini estimated separately at **$0.10–$0.70 / $0.50–$3.50 / $1–$7**. These are planning assumptions, not measured latencies or bills. Build, image/source storage, Secret Manager, logging and transfer are separate. See [LOW-COST.md](LOW-COST.md) for the comparison, calculation, free-tier assumptions, and limitations. The old approximately $57/month warm-instance proposal is superseded. Budget alerts are notifications, not spending caps.
 
 The Cloud Run region controls the service location, not a residency guarantee for Gemini Developer API processing. Provider privacy/tier selection still needs approval. No live provider assessment is verified.
 
@@ -40,7 +40,7 @@ The Cloud Run region controls the service location, not a residency guarantee fo
 2. After this preparation branch is available in GitHub, open Cloud Shell and clone it (commands below). Read this runbook first. The read-only preflight does not deploy anything.
 3. When you later approve provisioning, use Console Secret Manager to enter the Gemini key securely and create the pilot access secret. Do **not** paste provider keys in this chat, source files, GitHub Pages, build arguments, or terminal command history.
 4. Run the marked setup/build/deploy sections in order in Cloud Shell. A project administrator may need to do the one-time API/IAM setup for you. Cloud Build builds the exact `server/Dockerfile`; no Docker installation on the iPhone is needed.
-5. Copy the resulting HTTPS `run.app` URL into the existing Identifier Q **Settings → Backend URL** and enter only the **pilot session access token**, never the Gemini key. The app keeps that token in memory. The current deployed client already uses the backend's advertised size limit before uploading.
+5. Copy the resulting HTTPS `run.app` URL into the existing Identifier Q **Settings → Backend URL** and enter only the **pilot session access token**, never the Gemini key. The app keeps that token in memory. The prepared frontend supports the same-response protocol and advertised size limit. The current public Pages release is unchanged: publish the reviewed frontend transport update before connecting it to this new backend. Do not deploy or merge it as part of preparation.
 
 A review branch does not change the live Pages site; do not merge/push these changes to `main` merely to prepare Cloud Run. The existing Pages workflow is left unchanged.
 
@@ -180,8 +180,8 @@ gcloud run deploy "$SERVICE" \
   --service-account="$RUNTIME_SA" \
   --execution-environment=gen2 \
   --port=8080 --cpu=1 --memory=2Gi \
-  --min=1 --max=1 --concurrency=8 \
-  --no-cpu-throttling --timeout=600 \
+  --min=0 --max=1 --concurrency=8 \
+  --cpu-throttling --no-cpu-boost --timeout=600 \
   --ingress=all --allow-unauthenticated \
   --set-env-vars="HOST=0.0.0.0,MAX_UPLOAD_MB=25,FRONTEND_ORIGIN=$FRONTEND_ORIGIN,GEMINI_MODEL=gemini-3.5-flash-lite" \
   --set-secrets="GEMINI_API_KEY=$GEMINI_SECRET:$GEMINI_SECRET_VERSION,ANALYSIS_ACCESS_TOKEN=$ACCESS_SECRET:$ACCESS_SECRET_VERSION" \
@@ -212,7 +212,7 @@ Then connect URL + pilot token in the existing Pages app and verify it reports a
 
 Project ID/number and region are known. What remains unverified here:
 
-1. **Billing linkage and policy approval** for continuously warm compute, API usage, public ingress and the selected provider privacy/tier.
+1. **Billing linkage and policy approval** for usage-based compute/API costs, public ingress and the selected provider privacy/tier.
 2. **Who will deploy** (Cloud Shell user's Google account or an explicitly connected cloud identity), and their actual permission grants. This environment has no `gcloud` executable or selected GCP identity in its supported connection manifest; pre-existing ADC-related variable names alone do not verify access. No secret files were opened and no GCP IAM capabilities are claimed.
 3. Whether the proposed service/accounts/repository/source bucket/secrets already exist and should be reused. API enablement and secret versions have not been verified against Google Cloud.
 4. **Authorized Gemini key stored securely**, and **pilot access-token secret**, with enabled numeric version numbers. No key values are needed in chat. A Gemini key can belong to a different project, but its project/API restrictions/quota/billing must be confirmed separately.
@@ -244,7 +244,7 @@ Do not grant the runtime project-wide secret access or create service-account ke
 
 ## Pause / cleanup after a pilot (also modifying commands; not run)
 
-Setting min=0 later removes the always-warm baseline but is **not a safe active-processing configuration** for this in-memory backend. First finish/cancel processing and export reports. Deleting the dedicated Cloud Run service stops its compute, but does not remove Artifact Registry images, source archives, logs or secrets and their possible charges. Review those resources individually and never delete shared resources blindly. Budget alerts are recommended before activation, not a hard cost limit.
+The prototype is already configured for min=0. Do not add periodic external health pings or switch to always-allocated CPU to keep it warm. Finish/cancel any active requests and export browser reports before changing revisions or deleting the service. Removing Cloud Run compute does not remove build archives, images, secrets or their possible storage charges. Review dedicated resources individually; never delete shared resources blindly. Budget alerts are not hard caps.
 
 ## Official references checked 2026-11-03
 
@@ -257,10 +257,10 @@ Setting min=0 later removes the always-warm baseline but is **not a safe active-
 - [Cloud Run Secret Manager integration](https://docs.cloud.google.com/run/docs/configuring/services/secrets)
 - [Cloud Run pricing](https://cloud.google.com/run/pricing)
 
-## Validation performed here (2026-11-03)
+## Original port/probe validation (2026-11-03; see LOW-COST.md for current processing validation)
 
 - Type checking, linting and production build passed.
-- **49 unit/integration tests and all 22 browser tests passed.** This includes Cloud Run port/default/limit validation, public probe metadata/rate-limit behavior, protected health/job endpoints, and enforcement of smaller advertised upload limits before media/provider calls.
+- Previous Cloud Run preparation passed 49 tests. Current scale-to-zero validation is recorded in LOW-COST.md; the same frontend regression suite is retained. This includes Cloud Run port/default/limit validation, public probe metadata/rate-limit behavior, protected health/job endpoints, and enforcement of smaller advertised upload limits before media/provider calls.
 - The Docker image was built **locally only**, then run as non-root with injected `PORT=9090` and `K_SERVICE=identifier-q-api`. Its probe returned 200 without a token, detailed health returned 401 without a token, authenticated health advertised 25 MiB and 10–300 seconds, and the Pages CORS preflight passed. FFmpeg and ffprobe were present and their startup checks passed. No model was called.
 - All eight Bash command blocks and both shell files passed local Bash syntax checks; provisioning/build/deployment blocks were **not executed**. The read-only preflight stopped with its expected “gcloud unavailable” message in this machine.
 - Existing GitHub Pages returned HTTP 200. The frontend source and Pages workflow were not changed by this preparation.

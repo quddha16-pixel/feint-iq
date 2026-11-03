@@ -1,6 +1,6 @@
 import { z } from "zod";
 export const PILOT_LIMITS = {
-  maxBytes: 100 * 1024 * 1024,
+  maxBytes: 25 * 1024 * 1024,
   minSeconds: 10,
   maxSeconds: 300,
   maxFrames: 125,
@@ -9,6 +9,7 @@ export const PILOT_LIMITS = {
 } as const;
 export const engineHealthSchema = z.object({
   schemaVersion: z.literal(1),
+  protocol: z.literal("request-stream-v1").optional(),
   available: z.boolean(),
   provider: z.string(),
   model: z.string(),

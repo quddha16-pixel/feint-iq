@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
-import { timingSafeEqual, randomUUID } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +12,7 @@ import {
   type AnalysisJob,
   type CompletedAnalysisReport,
 } from "../src/domain/contracts";
+import { REQUEST_PROTOCOL, type AnalysisEvent } from "../src/domain/transport";
 import { PILOT_LIMITS } from "../src/domain/engine";
 import { validateVideoFile } from "../src/domain/video";
 import { prepareVideo, type PreparedVideo } from "./media";
@@ -84,11 +85,12 @@ export async function createBackend(options: Options) {
           if (value.id === id) idempotency.delete(key);
       }
   };
-  const timer = setInterval(expired, 30000);
-  timer.unref();
-  app.addHook("onClose", async () => {
-    clearInterval(timer);
+  let closing = false;
+  app.addHook("preClose", async () => {
+    closing = true;
     for (const entry of jobs.values()) entry.abort.abort();
+  });
+  app.addHook("onClose", async () => {
     await Promise.allSettled([...running]);
   });
   app.addHook("onRequest", async (req, reply) => {
@@ -133,6 +135,7 @@ export async function createBackend(options: Options) {
   }));
   app.get("/health", async () => ({
     schemaVersion: 1,
+    protocol: REQUEST_PROTOCOL,
     available: !!options.provider,
     provider: options.provider?.name ?? "Not configured",
     model: options.provider?.model ?? "Not configured",
@@ -238,13 +241,25 @@ export async function createBackend(options: Options) {
           return reply.code(409).send({
             message: "This submission key was already used for another setup.",
           });
-        return reply.code(202).send(entry!.job);
+        return reply.header("content-type", "application/x-ndjson").send(
+          JSON.stringify(
+            entry!.report
+              ? { type: "result", job: entry!.job, report: entry!.report }
+              : {
+                  type: "error",
+                  job: entry!.job,
+                  message:
+                    entry!.job.error ??
+                    "This submission did not complete. Retry explicitly with a new key.",
+                },
+          ) + "\n",
+        );
       }
       directory = await mkdtemp(join(tmpdir(), "identifier-q-"));
       const path = join(directory, "source-video");
       await writeFile(path, file, { mode: 0o600 });
       file = undefined;
-      const id = randomUUID(),
+      const id = key,
         abort = new AbortController();
       const entry: StoredJob = {
         created: Date.now(),
@@ -255,14 +270,44 @@ export async function createBackend(options: Options) {
       idempotency.set(key, { id, fingerprint });
       const retainedDirectory = directory;
       directory = undefined;
+      // The response remains open until processing AND cleanup finish. No detached worker.
+      reply.hijack();
+      for (const [name, value] of Object.entries(reply.getHeaders()))
+        if (value !== undefined) reply.raw.setHeader(name, value);
+      reply.raw.writeHead(200, {
+        "content-type": "application/x-ndjson; charset=utf-8",
+        "x-accel-buffering": "no",
+      });
+      reply.raw.flushHeaders();
+      const send = (event: AnalysisEvent) => {
+        if (!reply.raw.destroyed && !reply.raw.writableEnded)
+          reply.raw.write(JSON.stringify(event) + "\n");
+      };
+      const update = (stage: NonNullable<AnalysisJob["stage"]>) => {
+        entry.job.status = "processing";
+        entry.job.stage = stage;
+        send({ type: "job", job: { ...entry.job } });
+      };
+      const disconnect = () => {
+        if (!reply.raw.writableEnded) {
+          entry.job.status = "canceled";
+          entry.job.error =
+            "The client disconnected. No incomplete report was saved; provider usage may already have occurred.";
+          abort.abort();
+        }
+      };
+      reply.raw.on("close", disconnect);
+      const heartbeat = setInterval(() => send({ type: "heartbeat" }), 10000);
+      heartbeat.unref();
+      let timedOut = false;
       const task = (async () => {
         let completedReport: CompletedAnalysisReport | undefined;
-        const timeout = setTimeout(
-          () => abort.abort(),
-          options.timeoutMs ?? 240000,
-        );
+        const timeout = setTimeout(() => {
+          timedOut = true;
+          abort.abort();
+        }, options.timeoutMs ?? 240000);
         try {
-          entry.job.status = "processing";
+          update("decoding");
           const prepared: PreparedVideo = await (
             options.prepare ?? prepareVideo
           )(path, retainedDirectory, c.data, abort.signal);
@@ -270,12 +315,15 @@ export async function createBackend(options: Options) {
             throw new Error(
               "Decoded duration differs from selected footage metadata. Choose the original video again.",
             );
+          if (abort.signal.aborted) throw new Error("Request canceled.");
+          update("analyzing");
           const result = await options.provider!.analyze(
             prepared,
             c.data,
             abort.signal,
           );
-          if (abort.signal.aborted) return;
+          if (abort.signal.aborted) throw new Error("Request canceled.");
+          update("validating");
           completedReport = buildReport(
             id,
             c.data,
@@ -288,21 +336,27 @@ export async function createBackend(options: Options) {
         } catch (error) {
           if (entry.job.status !== "canceled") {
             entry.job.status = "failed";
-            entry.job.error = abort.signal.aborted
-              ? "Analysis timed out. The partial result was discarded."
-              : error instanceof Error
-                ? error.message
-                : "Analysis failed. No report was saved.";
+            entry.job.error = timedOut
+              ? "Analysis timed out. No partial report was saved."
+              : closing
+                ? "The server is restarting. No complete result was returned; check usage before retrying."
+                : error instanceof Error
+                  ? error.message
+                  : "Analysis failed. No report was saved.";
           }
         } finally {
           clearTimeout(timeout);
+          if (!abort.signal.aborted && entry.job.status === "processing") {
+            entry.job.stage = "cleaning";
+            send({ type: "job", job: { ...entry.job } });
+          }
           try {
             await rm(retainedDirectory, { recursive: true, force: true });
           } catch {
             completedReport = undefined;
             entry.job.status = "failed";
             entry.job.error =
-              "Temporary footage cleanup failed. The backend needs attention before more footage is submitted.";
+              "Temporary footage cleanup failed. The backend needs attention.";
           }
           active = false;
           if (
@@ -313,15 +367,30 @@ export async function createBackend(options: Options) {
             entry.report = completedReport;
             entry.job.reportId = id;
             entry.job.status = "completed";
+            entry.job.stage = "completed";
           }
         }
       })();
       running.add(task);
-      void task.then(
-        () => running.delete(task),
-        () => running.delete(task),
-      );
-      return reply.code(202).send({ ...entry.job, status: "queued" });
+      try {
+        await task;
+        if (entry.report)
+          send({ type: "result", job: entry.job, report: entry.report });
+        else
+          send({
+            type: "error",
+            job: entry.job,
+            message:
+              entry.job.error ??
+              "Analysis canceled. No complete result was saved.",
+          });
+      } finally {
+        running.delete(task);
+        clearInterval(heartbeat);
+        reply.raw.off("close", disconnect);
+        if (!reply.raw.destroyed && !reply.raw.writableEnded) reply.raw.end();
+      }
+      return reply;
     } catch (error) {
       if (error instanceof Error && "statusCode" in error) throw error;
       return reply.code(400).send({
@@ -338,9 +407,10 @@ export async function createBackend(options: Options) {
         active = false;
     }
   });
-  app.get("/analyses", async () =>
-    [...jobs.values()].flatMap((e) => (e.report ? [e.report] : [])),
-  );
+  app.get("/analyses", async () => {
+    expired();
+    return [...jobs.values()].flatMap((e) => (e.report ? [e.report] : []));
+  });
   app.get<{ Params: { id: string } }>(
     "/analyses/:id/status",
     async (req, reply) => {
@@ -358,6 +428,7 @@ export async function createBackend(options: Options) {
     "/analyses/:id/report",
     async (req, reply) => {
       expired();
+      expired();
       const entry = jobs.get(req.params.id);
       return (
         entry?.report ??
@@ -370,6 +441,7 @@ export async function createBackend(options: Options) {
   app.delete<{ Params: { id: string } }>(
     "/analyses/:id",
     async (req, reply) => {
+      expired();
       const entry = jobs.get(req.params.id);
       if (!entry) return reply.code(404).send({ message: "Job not found." });
       entry.abort.abort();

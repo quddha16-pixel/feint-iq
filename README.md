@@ -28,7 +28,7 @@ Deploy `dist/` through a static HTTPS host. Hash routes work without server rewr
 - Boxing by default; persistent discipline selection and 12 boxing / 14 kickboxing metric definitions. Rulesets gate knee and checking metrics. Changing preference never changes a stored report.
 - Local 10-second to 5-minute MP4/MOV/WebM selection, size/type checks, metadata validation, codec error feedback, preview, resource cleanup, replacement, and removal. Default limit 500 MB; configurable from 10–2048 MB.
 - Fighter identification by corner, initial position, or a paused-frame point plus notes. Up to five confirmation frames and a stable subject ID preserve identity independently of screen position. Frame points are normalized metadata, **not automatic tracking**. Replacing footage resets identification hints. Frame references and files do not survive reload.
-- Validated submission with a truthful unavailable-engine result by default, plus an authenticated private-pilot backend connection, real upload and bounded job monitoring; no simulated progress.
+- Validated submission with a truthful unavailable-engine result by default, plus an authenticated private-pilot backend connection, real upload and request-bound processing updates; no simulated progress.
 - Import/export of structured schema-v1 reports, evidence-linked metrics and coaching drills, verified timestamp seeking after original-video reattachment, and source/methodology context.
 - Browser-local validated report history (up to 100 reports), filters, sorting, deletion, compatible two-report comparisons, and a progression chart when compatible scored reports exist.
 - Keyboard navigation, visible focus, accessible form controls and tabs, native modal focus containment, reduced motion, and safe-area-aware mobile navigation.
@@ -37,7 +37,7 @@ Deploy `dist/` through a static HTTPS host. Hash routes work without server rewr
 
 The static GitHub Pages frontend does not analyze footage on its own. With no backend connection, Generate returns an explicit integration-required error and sends nothing. **No live Gemini assessment has been validated.**
 
-A separately hosted private-pilot Node backend is implemented in `server/`. It authenticates uploads, validates actual media with ffprobe, decodes up to 120 source frames across a 10–300-second clip plus identity references, calls a server-only Gemini adapter, and validates qualitative findings into the existing report schema. All scores/confidence remain null; timestamps locate source frames, not exact strikes. HTTP/media/report paths are tested with explicitly synthetic provider adapters, not represented as live AI results.
+A separately hosted, scale-to-zero private-pilot Node backend is implemented in `server/`. It keeps the HTTP response open until processing and cleanup finish, returns the complete report inline, authenticates uploads, validates actual media with ffprobe, decodes up to 120 source frames across a 10–300-second clip plus identity references, calls a server-only Gemini adapter, and validates qualitative findings into the existing report schema. All scores/confidence remain null; timestamps locate source frames, not exact strikes. HTTP/media/report paths are tested with explicitly synthetic provider adapters, not represented as live AI results.
 
 See [Phase 2 integration, cost, hosting and privacy](docs/PHASE2-INTEGRATION.md) for configuration and the exact credential-dependent boundary. No provider credentials or paid hosting have been configured or purchased. Server-only variables are listed in `.env.example`; never put provider keys in Vite or Pages. The recommended candidate model is `gemini-3.5-flash-lite`, subject to real-footage evaluation.
 
@@ -53,7 +53,7 @@ After explicit provider/hosting authorization, use host-managed secrets or an ig
 node --use-env-proxy --env-file=.env.server --import tsx server/main.ts
 ```
 
-Connect its HTTPS URL and private pilot session token in Settings; that token is held in memory, not persisted. The browser asks for a backend access token, never a Gemini API key. The first live pipeline is boxing-only, 10 seconds–5 minutes, ≤100 MB. Kickboxing local setup and authentic imported reports remain supported.
+Connect its HTTPS URL and private pilot session token in Settings; that token is held in memory, not persisted. The browser asks for a backend access token, never a Gemini API key. The first live pipeline is boxing-only, 10 seconds–5 minutes, ≤25 MiB. Kickboxing local setup and authentic imported reports remain supported.
 
 ## Persistence and privacy
 
@@ -110,5 +110,7 @@ The reviewed Cloud Run target is project `feint-identifierq` (`334840153796`) in
 non-deploying preflight, explicit future API/IAM/Secret Manager/build/deploy
 commands, health probes, billing assumptions and iPhone Cloud Shell steps.
 The current HTTP/1 Cloud Run pilot defaults to 25 MiB uploads (10–300 seconds)
-and needs always-allocated CPU for background jobs. Nothing is auto-deployed
+and uses request-based processing with min=0 and request-based CPU allocation. Nothing is auto-deployed
 by those preparation files; the existing Pages workflow stays separate.
+
+See [the low-cost Cloud Run plan](deploy/cloudrun/LOW-COST.md) for the request-stream protocol, cancellation limits, and separate Cloud Run/Gemini estimates for 10, 50 and 100 clips. No infrastructure has been deployed.
