@@ -12,7 +12,7 @@ The repository now includes a working private-pilot transport and media pipeline
 6. Structured findings must confirm the subject and cite actual sequence frame IDs. Unknown frames, unconfirmed identity, malformed responses, provider refusals/truncation, or out-of-bounds evidence fail the job. Observations are labeled model interpretations. All numerical scores and confidence values remain null.
 7. The frontend receives real stage updates and the validated report in the same open response, saves it to browser history, and opens the existing report interface. Source-frame links seek in reattached original footage. These are **verified source-frame locations, not verified strike timing or independent fact-checking**.
 
-HTTP transport, media decoding, job lifecycle, and report rendering are tested using explicitly synthetic provider adapters. No live Gemini request or authentic fight assessment has been run. Provider access, model accuracy, identity quality, latency, and real token usage remain unvalidated.
+HTTP transport, media decoding, job lifecycle, and report rendering are tested using explicitly synthetic provider adapters. No live Gemini request or authentic fight assessment has been run. Provider access, model accuracy, identity quality, latency, and real token usage remain unvalidated. The exact existing-secret mapping and Free Trial/Free Tier restrictions are in the [deployment readiness runbook](../deploy/cloudrun/README.md).
 
 ## Recommended provider and API
 
@@ -29,21 +29,13 @@ Gemini 2.5 Flash was considered but is deprecated and its documentation announce
 
 The adapter calls `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` with `x-goog-api-key`, inline image parts, a bounded structured-response schema, and an 8,192-token maximum output. It does not request search grounding, tools, code execution, or external URLs. A 19 MiB serialized request guard prevents oversized provider calls. There are no automatic paid retries or invented fallback findings.
 
-## Usage-based cost estimate
+## Approved Free Tier boundary and costs
 
-The checked pricing table lists **$0.30 per million input tokens** and **$2.50 per million output tokens, including thinking**, for the standard paid tier. Prices and model availability can change; confirm them before authorizing usage.
+The current prototype plan uses **Gemini Free Tier only**, with `gemini-3.5-flash-lite`. Its documented Standard input/output pricing is free of charge within active project quotas; the model supports image/video inputs and structured outputs. The adapter sends JPEG frames, not the original video/audio. Confirm the key-owning project still shows **Free** in AI Studio; a model ID cannot enforce billing tier. No automatic retry/model switch or paid API upgrade is implemented. A quota error tells the owner not to enable paid billing.
 
-Budget assumptions (not measured usage):
+The prior paid-tier token estimates are superseded by the [current free-tier/trial-only deployment plan](../deploy/cloudrun/README.md) and [separate cloud cost estimates](../deploy/cloudrun/LOW-COST.md). **Google Cloud's $300 trial credit cannot pay Gemini API in AI Studio charges.** Cloud compute/storage/build usage must fit eligible shared free allowances or remaining valid trial credits. Do not upgrade either billing account or activate paid Gemini.
 
-| Input                        | Assumption                                                                                                            |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Source images                | 20–120 sequence frames plus 1–5 identity references, scaled to at most 640×640                                        |
-| Input tokens                 | Approximately 10,000–150,000 including image processing, metadata, and instructions; image tiling/resolution can vary |
-| Output tokens                | Approximately 2,000–8,192 including any thinking                                                                      |
-| Estimated provider cost      | About **$0.008–$0.066 per request**, rounded to a planning range of **$0.01–$0.07**                                   |
-| Conservative pilot allowance | **$0.10 per submitted clip**; 100 clips ≈ $10, before hosting, transfer, tax, and failed/repeated requests            |
-
-Formula: input_tokens / 1,000,000 × $0.30 + output_tokens / 1,000,000 × $2.50. Rate limits and free-tier eligibility are not guaranteed. The free tier's published data-use terms differ from the paid tier: the pricing table lists free-tier inputs as used to improve products, paid-tier inputs as not used for that purpose. Do not silently select a tier for sensitive athlete footage. No service, subscription, billing account, provider key, or hosting instance has been purchased or provisioned.
+Free-service data handling can permit product improvement/human review; review Google's current terms and use appropriate, consented footage. Privacy concerns are not permission to purchase a paid tier. No real footage, provider credential, paid service, or hosted backend has been used here.
 
 ## Simplest viable hosting
 

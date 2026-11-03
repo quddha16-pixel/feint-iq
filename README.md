@@ -114,3 +114,7 @@ and uses request-based processing with min=0 and request-based CPU allocation. N
 by those preparation files; the existing Pages workflow stays separate.
 
 See [the low-cost Cloud Run plan](deploy/cloudrun/LOW-COST.md) for the request-stream protocol, cancellation limits, and separate Cloud Run/Gemini estimates for 10, 50 and 100 clips. No infrastructure has been deployed.
+
+### Deployment readiness: Free Trial / Free Tier only
+
+The [Cloud Shell readiness runbook](deploy/cloudrun/README.md) maps the existing `identifierq-gemini-api-key` and `identifierq-pilot-token` secrets to backend-only variables, prepares minimal service-account permissions, and lists exact future build/deploy commands. No resources are deployed by this branch. Google Cloud must remain an unupgraded Free Trial; Gemini must remain Free Tier. The $300 cloud trial credit cannot cover Gemini API in AI Studio charges. The public Pages polling client must receive the separately authorized `request-stream-v1` release before it connects to the new backend.

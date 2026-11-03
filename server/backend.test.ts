@@ -368,6 +368,36 @@ describe("server-only Gemini adapter", () => {
     expect(String(init[1].body)).toContain("identityIndependentOfPosition");
     expect(String(init[1].body)).toContain("frame-2");
   });
+  it("fails on free quota exhaustion without retrying, switching models, or exposing the key", async () => {
+    const request = vi.fn(
+      async () => new Response('{"error":"quota exhausted"}', { status: 429 }),
+    );
+    const adapter = new GeminiProvider(
+      "synthetic-key-never-real",
+      undefined,
+      request as typeof fetch,
+    );
+    await expect(
+      adapter.analyze(
+        prepared,
+        metadata().configuration,
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("do not enable paid billing");
+    expect(request).toHaveBeenCalledTimes(1);
+    const [url, init] = request.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+    );
+    expect(url).not.toContain("synthetic-key-never-real");
+    const body = JSON.parse(String(init.body));
+    expect(body).not.toHaveProperty("tools");
+    expect(body).not.toHaveProperty("cachedContent");
+    expect(body.generationConfig.maxOutputTokens).toBe(8192);
+  });
   it("does not substitute mock findings on provider rejection or malformed responses", async () => {
     for (const response of [
       new Response("{}", { status: 403 }),

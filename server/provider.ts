@@ -178,6 +178,10 @@ export class GeminiProvider implements VideoAnalysisProvider {
         signal,
       },
     );
+    if (response.status === 429)
+      throw new Error(
+        "Gemini Free Tier quota or capacity is unavailable (HTTP 429). Wait and check the project's free quota in AI Studio; do not enable paid billing. No automatic retry or model fallback was attempted, and no assessment was saved.",
+      );
     if (!response.ok)
       throw new Error(
         `Analysis provider request failed (HTTP ${response.status}). Check server-side model access, quota, and authorization; no assessment was saved.`,
