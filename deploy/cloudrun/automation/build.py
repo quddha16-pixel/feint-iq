@@ -20,9 +20,9 @@ from common import (
     SHA,
     UUID,
     Failure,
-    check_bucket,
     guard,
     project_check,
+    verify_source_bucket,
     write_result,
 )
 
@@ -125,8 +125,7 @@ def build(cloud, ci=False, approved=False, sleep=time.sleep):
         f"--project={PROJECT}",
         f"--location={REGION}",
     )
-    bucket = cloud.run("storage", "buckets", "describe", f"gs://{BUCKET}")
-    check_bucket(bucket)
+    verify_source_bucket(cloud)
     check_source(cloud.run("meta", "list-files-for-upload", raw=True))
     # Full SHA + unique run nonce avoids replacing a prior build tag for the same commit.
     # Tags are not claimed immutable: deployments consume only the sha256 digest.

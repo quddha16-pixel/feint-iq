@@ -92,6 +92,29 @@ def service():
     }
 
 
+def raw_bucket():
+    """Synthetic Storage JSON API shape; never a claim about the live owner."""
+    return {
+        "kind": "storage#bucket",
+        "name": c.BUCKET,
+        "projectNumber": c.NUMBER,
+        "iamConfiguration": {
+            "uniformBucketLevelAccess": {"enabled": True},
+            "publicAccessPrevention": "enforced",
+        },
+    }
+
+
+def standardized_bucket():
+    """SDK 592.0.0 default display: owner is omitted even with --format=json."""
+    return {
+        "name": c.BUCKET,
+        "storage_url": f"gs://{c.BUCKET}/",
+        "uniform_bucket_level_access": True,
+        "public_access_prevention": "enforced",
+    }
+
+
 def policy(role, member):
     return {"bindings": [{"role": role, "members": [f"serviceAccount:{member}"]}]}
 
@@ -106,6 +129,8 @@ class FakeCloud:
         self.unknown_provider = False
         self.disabled_secret = False
         self.fail_poll = False
+        self.bucket_metadata = raw_bucket()
+        self.bucket_error = None
 
     def run(self, *args, **kwargs):
         self.calls.append(args)
@@ -125,11 +150,13 @@ class FakeCloud:
         if key == ("artifacts", "repositories", "get-iam-policy"):
             return policy("roles/artifactregistry.writer", c.BUILD_SA)
         if key == ("storage", "buckets", "describe"):
-            return {
-                "projectNumber": c.NUMBER,
-                "uniform_bucket_level_access": True,
-                "public_access_prevention": "enforced",
-            }
+            if self.bucket_error:
+                raise self.bucket_error
+            return (
+                copy.deepcopy(self.bucket_metadata)
+                if "--raw" in args
+                else standardized_bucket()
+            )
         if key == ("storage", "buckets", "get-iam-policy"):
             return policy("roles/storage.objectViewer", c.BUILD_SA)
         if key == ("iam", "workload-identity-pools", "describe"):
@@ -238,19 +265,19 @@ class Guards(unittest.TestCase):
         git.assert_not_called()
 
     def test_source_bucket_requires_expected_project_and_private_access_settings(self):
-        safe = {
-            "projectNumber": c.NUMBER,
-            "uniform_bucket_level_access": True,
-            "public_access_prevention": "enforced",
-        }
-        c.check_bucket(safe)
-        for change in (
-            {"projectNumber": "other"},
-            {"uniform_bucket_level_access": False},
-            {"public_access_prevention": "inherited"},
+        c.check_bucket(raw_bucket())
+        for field, value in (
+            ("uniformBucketLevelAccess", {"enabled": False}),
+            ("publicAccessPrevention", "inherited"),
         ):
+            obj = raw_bucket()
+            obj["iamConfiguration"][field] = value
             with self.assertRaises(c.Failure):
-                c.check_bucket({**safe, **change})
+                c.check_bucket(obj)
+        obj = raw_bucket()
+        obj["projectNumber"] = "999999999999"
+        with self.assertRaises(c.BucketOwnershipMismatch):
+            c.check_bucket(obj)
 
     def test_fixed_configuration_and_credential_ignore_rules(self):
         c.verify_configuration()

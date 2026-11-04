@@ -43,6 +43,18 @@ class Missing(Failure):
     pass
 
 
+class PermissionDenied(Failure):
+    pass
+
+
+class BucketMetadataError(Failure):
+    """The response does not establish bucket identity/required security settings."""
+
+
+class BucketOwnershipMismatch(Failure):
+    """An authoritative projectNumber differs from the approved project number."""
+
+
 class Cloud:
     def __init__(self):
         self.calls = []
@@ -65,7 +77,14 @@ class Cloud:
             text = p.stderr.upper()
             label = " ".join(command[:4])
             if "PERMISSION_DENIED" in text or "PERMISSION" in text or "403" in text:
-                raise Failure(
+                if args[:3] == ("storage", "buckets", "describe"):
+                    raise PermissionDenied(
+                        f"Permission denied reading metadata for gs://{BUCKET}. "
+                        "Verify storage.buckets.get access; the read-only raw gcloud "
+                        "command can identify any additional denied metadata permission. "
+                        "Bucket ownership remains unverified. No IAM change was attempted."
+                    )
+                raise PermissionDenied(
                     f"{label}: permission denied. Verify the documented scoped IAM/act-as grants; no automatic IAM repair was attempted."
                 )
             if "UNAUTHENTICATED" in text or "LOGIN" in text or "CREDENTIAL" in text:
@@ -234,17 +253,67 @@ def project_check(cloud):
         raise Failure("Google Cloud project identity mismatch.")
 
 
+def verify_source_bucket(cloud):
+    # --format=json alone still uses gcloud's standardized display, which can
+    # omit projectNumber. --raw requests the actual Storage API response keys.
+    # This CLI flag is distinct from Cloud.run(raw=True), which disables JSON parsing.
+    bucket = cloud.run("storage", "buckets", "describe", f"gs://{BUCKET}", "--raw")
+    check_bucket(bucket)
+    return bucket
+
+
 def check_bucket(bucket):
-    if str(bucket.get("projectNumber", bucket.get("project_number"))) != NUMBER:
-        raise Failure("Build source bucket belongs to an unexpected project.")
-    iam = bucket.get("iamConfiguration", {})
-    uniform = bucket.get(
-        "uniform_bucket_level_access",
-        iam.get("uniformBucketLevelAccess", {}).get("enabled"),
-    )
-    prevention = bucket.get(
-        "public_access_prevention", iam.get("publicAccessPrevention")
-    )
+    """Verify raw Storage JSON API metadata, never a configured/default project."""
+    if not isinstance(bucket, dict):
+        raise BucketMetadataError(
+            "Cannot verify bucket ownership: expected a raw Storage API JSON object."
+        )
+    if not bucket.get("name"):
+        raise BucketMetadataError(
+            "Cannot verify bucket identity: raw metadata is missing name."
+        )
+    if bucket["name"] != BUCKET:
+        raise BucketMetadataError(
+            f"Bucket identity mismatch: metadata name does not match gs://{BUCKET}."
+        )
+    owner = bucket.get("projectNumber")
+    if owner is None:
+        raise BucketMetadataError(
+            "Cannot verify bucket ownership: raw projectNumber is missing or null. "
+            "Use gcloud storage buckets describe with --raw --format=json. "
+            "Missing metadata does not establish an ownership mismatch."
+        )
+    # The JSON API encodes uint64 as a decimal string. Accept an exact JSON
+    # integer too, but never booleans, floats, project IDs, or missing-field defaults.
+    if (
+        type(owner) not in (str, int)
+        or not re.fullmatch(r"[1-9][0-9]{0,19}", str(owner))
+        or int(owner) > 2**64 - 1
+    ):
+        raise BucketMetadataError(
+            "Cannot verify bucket ownership: raw projectNumber has an invalid "
+            "uint64 representation. Ownership remains unverified."
+        )
+    if str(owner) != NUMBER:
+        raise BucketOwnershipMismatch(
+            f"Bucket ownership mismatch for gs://{BUCKET}: Storage API projectNumber "
+            f"is {owner}; expected {NUMBER} ({PROJECT}). No changes were made."
+        )
+    iam = bucket.get("iamConfiguration")
+    if not isinstance(iam, dict) or not isinstance(
+        iam.get("uniformBucketLevelAccess"), dict
+    ):
+        raise BucketMetadataError(
+            "Bucket owner verified, but raw iamConfiguration/uniformBucketLevelAccess "
+            "metadata is missing or invalid. Security settings remain unverified."
+        )
+    uniform = iam["uniformBucketLevelAccess"].get("enabled")
+    prevention = iam.get("publicAccessPrevention")
+    if uniform is None or prevention is None:
+        raise BucketMetadataError(
+            "Bucket owner verified, but raw bucket access settings are missing. "
+            "Security settings remain unverified."
+        )
     if uniform is not True or prevention != "enforced":
         raise Failure(
             "Build-source bucket must have uniform access and enforced public-access prevention. Review its settings; no automatic change was made."

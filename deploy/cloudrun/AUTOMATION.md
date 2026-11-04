@@ -2,6 +2,8 @@
 
 Prepared on `prepare/cloud-run` for `quddha16-pixel/feint-iq`, project `feint-identifierq` (`334840153796`), `us-central1`. **No Google Cloud resource creation, Cloud Build execution, registry push, backend deployment, billing change or frontend publication has been performed by this automation assignment.** A production container was built and tested locally only. The founder reports the existing infrastructure/IAM is ready; the setup planner checks it again before proposing additions. This workspace has no gcloud executable or connected Google Cloud identity.
 
+**Bucket ownership correction:** see [BUCKET-VERIFICATION.md](BUCKET-VERIFICATION.md). Setup and build checks now use raw Storage API metadata; omitted owner fields no longer produce a misleading ownership-mismatch error. Actual bucket ownership still requires the authenticated read-only verification described there.
+
 ## Architecture and boundaries
 
 | Option                                   | Assessment                                                                                                                                                       |

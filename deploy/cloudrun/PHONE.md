@@ -16,6 +16,8 @@ bash deploy/cloudrun/iq setup
 
 This checks account/resource/IAM metadata and shows the build-side WIF plan. It never reads secret values, creates resources, builds or deploys. Permission errors mean unverified, not absent. Review the [full architecture and exact permissions](AUTOMATION.md) before approving changes. Also check unupgraded Free Trial status, remaining credits/days in Cloud Billing, and **Free** in AI Studio. Do not press Upgrade, Prepay or Set up paid billing.
 
+If setup reports unexpected bucket ownership, use the [bucket-verification investigation](BUCKET-VERIFICATION.md). The old formatter omitted the owner field; the corrected checker requests raw API metadata and distinguishes unverified metadata from a genuine mismatch. Verify the actual owner with its one read-only command before proceeding.
+
 ## Apply authentication setup only after approval
 
 Do not run this until the **new WIF pool/provider/account/custom roles and scoped bindings** have been explicitly approved:

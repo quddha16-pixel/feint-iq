@@ -14,13 +14,13 @@ from common import (
     SECRETS,
     SERVICE,
     Failure,
-    check_bucket,
     ci_account,
     mapping,
     principal,
     project_check,
     provider,
     trust,
+    verify_source_bucket,
     write_result,
 )
 
@@ -159,8 +159,7 @@ def plan(cloud, purpose):
         raise Failure(
             "Existing builder's repository-scoped writer grant was not verified."
         )
-    bucket = cloud.run("storage", "buckets", "describe", f"gs://{BUCKET}")
-    check_bucket(bucket)
+    verify_source_bucket(cloud)
     bucket_policy = cloud.run("storage", "buckets", "get-iam-policy", f"gs://{BUCKET}")
     if any(
         any(m in ("allUsers", "allAuthenticatedUsers") for m in b.get("members", []))

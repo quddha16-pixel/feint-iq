@@ -31,7 +31,7 @@ gcloud projects get-iam-policy "$PROJECT_ID" --flatten='bindings[].members' \
   --filter="bindings.members:serviceAccount:$RUNTIME_SA" \
   --format='table(bindings.role,bindings.condition.expression)' || echo 'Project IAM not yet verified.'
 gcloud artifacts repositories describe "$AR_REPOSITORY" --project="$PROJECT_ID" --location="$REGION" --format='value(name)' || echo 'Artifact repository not yet verified.'
-gcloud storage buckets describe "gs://$BUILD_SOURCE_BUCKET" --format='yaml(name,projectNumber)' || echo 'Build source bucket not yet verified.'
+gcloud storage buckets describe "gs://$BUILD_SOURCE_BUCKET" --raw --format='yaml(name,projectNumber)' || echo 'Build source bucket not yet verified.'
 gcloud run services describe "$SERVICE" --project="$PROJECT_ID" --region="$REGION" \
   --format='value(status.url,status.latestReadyRevisionName)' || echo 'Cloud Run service not yet verified (expected before first deployment).'
 echo 'This is an inventory, NOT a deployment approval or a complete permission/billing check. No secret values were read.'
