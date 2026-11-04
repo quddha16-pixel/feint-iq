@@ -2,6 +2,8 @@
 
 The earlier error, **“Build source bucket belongs to an unexpected project”**, did not distinguish missing ownership metadata from a real mismatch. A parsing defect is verified; the live bucket's owner has **not** been verified in this workspace, which has no gcloud executable or connected Google Cloud identity.
 
+**Subsequent Cloud Shell evidence:** the founder has now supplied successful `verify-bucket` output with project number **334840153796**, ownership verified, and required access settings verified. The later IAM-grant failure is a separate investigation; use [partial WIF setup recovery](PARTIAL-WIF-RECOVERY.md) to inspect and preserve already completed setup. This workspace still cannot inspect live Google Cloud state directly.
+
 ## If the old message still appears
 
 The exact string **“Build source bucket belongs to an unexpected project”** was emitted by `7424f49`. It was removed in the already-pushed correction **f730e7c**. Seeing that exact message means the output is from an older/different script copy or an earlier run; current code does not emit it. The Console's access, location, storage class and encryption settings do not establish the owner project number.

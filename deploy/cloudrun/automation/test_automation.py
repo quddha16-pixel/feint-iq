@@ -131,6 +131,20 @@ class FakeCloud:
         self.fail_poll = False
         self.bucket_metadata = raw_bucket()
         self.bucket_error = None
+        self.project_policy = policy("roles/logging.logWriter", c.BUILD_SA)
+        self.accounts = {x: {"email": x} for x in (c.BUILD_SA, c.RUNTIME_SA)}
+        self.account_policies = {x: {"bindings": []} for x in self.accounts}
+        self.secret_policies = {
+            x: policy("roles/secretmanager.secretAccessor", c.RUNTIME_SA)
+            for x in c.SECRETS.values()
+        }
+        self.repo_policy = policy("roles/artifactregistry.writer", c.BUILD_SA)
+        self.bucket_policy = policy("roles/storage.objectViewer", c.BUILD_SA)
+        self.service_policy = {"bindings": []}
+        self.roles = {}
+        self.pool = None
+        self.providers = []
+        self.apis = set(s.REQUIRED_APIS)
 
     def run(self, *args, **kwargs):
         self.calls.append(args)
@@ -138,17 +152,17 @@ class FakeCloud:
         if key[:2] == ("projects", "describe"):
             return {"projectId": c.PROJECT, "projectNumber": c.NUMBER}
         if key[:2] == ("projects", "get-iam-policy"):
-            return policy("roles/logging.logWriter", c.BUILD_SA)
+            return copy.deepcopy(self.project_policy)
         if key == ("iam", "service-accounts", "describe"):
-            return None if "-ci-" in args[3] else {"email": args[3]}
+            return copy.deepcopy(self.accounts.get(args[3]))
         if key == ("iam", "service-accounts", "get-iam-policy"):
-            return {"bindings": []}
+            return copy.deepcopy(self.account_policies[args[3]])
         if key[:2] == ("secrets", "get-iam-policy"):
-            return policy("roles/secretmanager.secretAccessor", c.RUNTIME_SA)
+            return copy.deepcopy(self.secret_policies[args[2]])
         if key == ("secrets", "versions", "describe"):
             return {"state": "DISABLED" if self.disabled_secret else "ENABLED"}
         if key == ("artifacts", "repositories", "get-iam-policy"):
-            return policy("roles/artifactregistry.writer", c.BUILD_SA)
+            return copy.deepcopy(self.repo_policy)
         if key == ("storage", "buckets", "describe"):
             if self.bucket_error:
                 raise self.bucket_error
@@ -158,26 +172,77 @@ class FakeCloud:
                 else standardized_bucket()
             )
         if key == ("storage", "buckets", "get-iam-policy"):
-            return policy("roles/storage.objectViewer", c.BUILD_SA)
+            return copy.deepcopy(self.bucket_policy)
         if key == ("iam", "workload-identity-pools", "describe"):
-            return {"state": "ACTIVE"} if self.unknown_provider else None
+            return (
+                {"state": "ACTIVE"}
+                if self.unknown_provider
+                else copy.deepcopy(self.pool)
+            )
         if key == ("iam", "workload-identity-pools", "providers") and "list" in args:
-            return [{"name": "unexpected"}]
+            return (
+                [{"name": "unexpected"}]
+                if self.unknown_provider
+                else copy.deepcopy(self.providers)
+            )
         if key == ("iam", "roles", "describe"):
             return (
                 {"includedPermissions": ["secretmanager.versions.access"]}
                 if self.invalid_role
-                else None
+                else copy.deepcopy(self.roles.get(args[3]))
             )
         if key[:2] == ("services", "list"):
-            return [
-                {"config": {"name": x}}
-                for x in (
-                    "iam.googleapis.com",
-                    "iamcredentials.googleapis.com",
-                    "sts.googleapis.com",
-                )
-            ]
+            return [{"config": {"name": x}} for x in sorted(self.apis)]
+        if key == ("run", "services", "get-iam-policy"):
+            return copy.deepcopy(self.service_policy)
+        if key[:2] == ("services", "enable"):
+            self.apis.update(x for x in args[2:] if not x.startswith("--"))
+        if key == ("iam", "service-accounts", "create"):
+            email = f"{args[3]}@{c.PROJECT}.iam.gserviceaccount.com"
+            self.accounts[email] = {"email": email}
+            self.account_policies[email] = {"bindings": []}
+        if key == ("iam", "roles", "create"):
+            self.roles[args[3]] = {
+                "name": f"projects/{c.PROJECT}/roles/{args[3]}",
+                "stage": "GA",
+                "includedPermissions": self.flag(args, "permissions").split(","),
+            }
+        if key == ("iam", "workload-identity-pools", "create"):
+            self.pool = {"state": "ACTIVE"}
+        if (
+            key == ("iam", "workload-identity-pools", "providers")
+            and "create-oidc" in args
+        ):
+            purpose = args[4].removeprefix("github-")
+            self.providers.append(
+                {
+                    "name": c.provider(purpose),
+                    "attributeMapping": c.mapping(purpose),
+                    "attributeCondition": c.trust(purpose),
+                    "oidc": {
+                        "issuerUri": "https://token.actions.githubusercontent.com"
+                    },
+                }
+            )
+        if "add-iam-policy-binding" in args:
+            if key[:2] == ("projects", "add-iam-policy-binding"):
+                target_policy = self.project_policy
+            elif key[:2] == ("secrets", "add-iam-policy-binding"):
+                target_policy = self.secret_policies[args[2]]
+            else:
+                target_policy = {
+                    ("iam", "service-accounts"): self.account_policies.get(args[3]),
+                    ("storage", "buckets"): self.bucket_policy,
+                    ("artifacts", "repositories"): self.repo_policy,
+                    ("run", "services"): self.service_policy,
+                }[key[:2]]
+            target_policy["bindings"].append(
+                {
+                    "role": self.flag(args, "role"),
+                    "members": [self.flag(args, "member")],
+                }
+            )
+            return copy.deepcopy(target_policy)
         if key[:2] == ("meta", "list-files-for-upload"):
             return "server/main.ts"
         if key[:2] == ("builds", "submit"):
@@ -197,6 +262,10 @@ class FakeCloud:
         if key == ("run", "services", "describe"):
             return self.current
         return {}
+
+    @staticmethod
+    def flag(args, name):
+        return next(x.split("=", 1)[1] for x in args if x.startswith(f"--{name}="))
 
     def mutations(self):
         return [

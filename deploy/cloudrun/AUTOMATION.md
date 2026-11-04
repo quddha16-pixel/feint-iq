@@ -4,6 +4,8 @@ Prepared on `prepare/cloud-run` for `quddha16-pixel/feint-iq`, project `feint-id
 
 **Bucket ownership correction:** see [BUCKET-VERIFICATION.md](BUCKET-VERIFICATION.md). Setup and build checks now use raw Storage API metadata; omitted owner fields no longer produce a misleading ownership-mismatch error. Actual bucket ownership still requires the authenticated read-only verification described there.
 
+**Partially completed setup:** see [PARTIAL-WIF-RECOVERY.md](PARTIAL-WIF-RECOVERY.md). The founder has since supplied successful Cloud Shell bucket ownership/access verification and a custom-role list showing both build roles in GA. The later bucket-grant failure remains unconfirmed here. The planner now inventories each required binding, validates role identity/stage/permissions, records partial progress, and verifies apply results with fresh reads. Approved `setup --resume --approve-wif-setup` can add missing bindings only after every required resource/API is verified; it cannot recreate resources or enable APIs.
+
 ## Architecture and boundaries
 
 | Option                                   | Assessment                                                                                                                                                       |

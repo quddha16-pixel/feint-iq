@@ -51,6 +51,14 @@ class PermissionDenied(Failure):
     pass
 
 
+class BucketIamBindingError(Failure):
+    """A bucket-policy write failed; its 404 alone does not identify a missing bucket."""
+
+    def __init__(self, message, details=None):
+        super().__init__(message)
+        self.details = details or {}
+
+
 class BucketMetadataError(Failure):
     """The response does not establish bucket identity/required security settings."""
 
@@ -79,7 +87,61 @@ class Cloud:
         if p.returncode:
             # SDK errors can include credential/debug content: classify without logging it.
             text = p.stderr.upper()
-            label = " ".join(command[:4])
+            label = " ".join(args[:4])
+            if args[:3] == ("storage", "buckets", "add-iam-policy-binding"):
+                role = next(
+                    (a[7:] for a in args if a.startswith("--role=")), "unspecified"
+                )
+                member = next(
+                    (a[9:] for a in args if a.startswith("--member=")), "unspecified"
+                )
+                # Record only known request references/permission names. Never echo raw
+                # stderr, which may contain authentication or debugging material.
+                permissions = [
+                    permission
+                    for permission in (
+                        "storage.buckets.getIamPolicy",
+                        "storage.buckets.setIamPolicy",
+                        "iam.roles.get",
+                        "iam.serviceAccounts.get",
+                    )
+                    if permission in p.stderr
+                ]
+                if "UNAUTHENTICATED" in text or "LOGIN" in text or "CREDENTIAL" in text:
+                    kind = "authentication_failed"
+                elif "PERMISSION_DENIED" in text or "403" in text:
+                    kind = "permission_denied"
+                elif any(
+                    x in text
+                    for x in ("NOT_FOUND", "NOT FOUND", "DOES NOT EXIST", "404")
+                ):
+                    kind = "not_found_ambiguous"
+                elif "NOT SUPPORTED" in text or "NOT GRANTABLE" in text:
+                    kind = "unsupported_role_or_scope"
+                elif "409" in text or "ABORTED" in text:
+                    kind = "policy_conflict"
+                else:
+                    kind = "sdk_or_api_failure"
+                details = {
+                    "kind": kind,
+                    "bucket": f"gs://{BUCKET}",
+                    "role": role,
+                    "member": member,
+                    "reported_permissions": permissions,
+                }
+                raise BucketIamBindingError(
+                    f"Source-bucket IAM grant failed ({kind}). Bucket: gs://{BUCKET}; "
+                    f"role: {role}; principal: {member}. "
+                    + (
+                        f"Reported permission(s): {', '.join(permissions)}. "
+                        if permissions
+                        else ""
+                    )
+                    + "The write error alone does not identify a missing bucket. "
+                    "Earlier setup steps may already exist. Reinspect with the read-only "
+                    "setup plan before resuming; do not recreate resources.",
+                    details,
+                )
             if "PERMISSION_DENIED" in text or "PERMISSION" in text or "403" in text:
                 if args[:3] == ("storage", "buckets", "describe"):
                     raise PermissionDenied(
@@ -98,6 +160,11 @@ class Cloud:
             if "NOT_FOUND" in text or "NOT FOUND" in text or "DOES NOT EXIST" in text:
                 if optional:
                     return None
+                if args[:3] == ("iam", "roles", "describe"):
+                    raise Missing(
+                        f"Custom role projects/{PROJECT}/roles/{args[3]} is not found "
+                        "or not visible. Role IDs are case-sensitive; no role was recreated."
+                    )
                 raise Missing(
                     f"{label}: resource not found. Inspect setup; do not recreate unrelated resources."
                 )
@@ -332,11 +399,13 @@ def version(value):
     return value
 
 
-def write_result(kind, data):
+def write_result(kind, data, announce=True):
     directory = Path(os.environ.get("RUNNER_TEMP", "/tmp/identifierq-automation"))
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"identifierq-{kind}.json"
     path.write_text(json.dumps(data, indent=2) + "\n")
+    if not announce:
+        return path
     print(f"Non-secret {kind} record: {path}")
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:

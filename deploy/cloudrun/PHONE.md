@@ -30,6 +30,8 @@ If setup reports unexpected bucket ownership, use the [bucket-verification inves
 
 ## Apply authentication setup only after approval
 
+If a previous approved setup stopped during the bucket IAM grant, use the [partial-setup recovery procedure](PARTIAL-WIF-RECOVERY.md): update and inspect read-only first, then use `setup --resume --approve-wif-setup` only when all resources are verified. Resume can add missing approved IAM bindings; it cannot create resources or enable APIs. Do not delete/recreate working resources or substitute full setup to bypass failed verification.
+
 Do not run this until the **new WIF pool/provider/account/custom roles and scoped bindings** have been explicitly approved:
 
 ```bash

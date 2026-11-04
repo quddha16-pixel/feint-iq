@@ -38,6 +38,11 @@ def main():
     )
     settings.add_argument("--purpose", choices=("build", "deploy"), default="build")
     settings.add_argument("--approve-wif-setup", action="store_true")
+    settings.add_argument(
+        "--resume",
+        action="store_true",
+        help="Approved missing IAM bindings only; refuse creation or API enablement",
+    )
     compile_image = sub.add_parser("build")
     compile_image.add_argument("--approve-trial-build", action="store_true")
     compile_image.add_argument("--ci", action="store_true")
@@ -125,7 +130,7 @@ def main():
             )
         elif args.command == "setup":
             verify_configuration()
-            setup(Cloud(), args.purpose, args.approve_wif_setup)
+            setup(Cloud(), args.purpose, args.approve_wif_setup, args.resume)
         elif args.command == "build":
             build(Cloud(), args.ci, args.approve_trial_build)
         elif args.command == "deploy":
