@@ -1,12 +1,15 @@
 """Offline raw/standardized metadata regressions; no authenticated cloud access."""
 
+import io
 import json
 import subprocess
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
 import build as b
 import common as c
+import manage
 import setup as s
 from test_automation import COMMIT, FakeCloud, raw_bucket, standardized_bucket
 
@@ -211,6 +214,93 @@ class BucketMetadata(unittest.TestCase):
                 with self.assertRaises(expected):
                     b.build(cloud, ci=True, approved=True)
                 self.assertFalse(cloud.mutations())
+
+
+class ReadOnlyBucketCommand(unittest.TestCase):
+    def invoke(self):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with (
+            patch("sys.argv", ["manage.py", "verify-bucket"]),
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            code = manage.main()
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    @patch("manage.Cloud")
+    def test_command_reads_only_project_and_raw_bucket_and_omits_other_metadata(
+        self, cloud_type
+    ):
+        cloud = FakeCloud()
+        cloud.bucket_metadata["labels"] = {"private_note": "must-not-appear-in-summary"}
+        cloud_type.return_value = cloud
+        code, stdout, stderr = self.invoke()
+        self.assertEqual(code, 0)
+        self.assertEqual(stderr, "")
+        result = json.loads(stdout)
+        self.assertEqual(result["project_number"], c.NUMBER)
+        self.assertTrue(result["ownership_verified"])
+        self.assertTrue(result["read_only"])
+        self.assertNotIn("must-not-appear-in-summary", stdout)
+        self.assertEqual(
+            cloud.calls,
+            [
+                ("projects", "describe", c.PROJECT),
+                ("storage", "buckets", "describe", f"gs://{c.BUCKET}", "--raw"),
+            ],
+        )
+        self.assertFalse(cloud.mutations())
+
+    @patch("manage.Cloud")
+    def test_unverifiable_or_foreign_owner_never_gets_a_success_summary(
+        self, cloud_type
+    ):
+        for state in ("missing", "mismatch", "denied"):
+            with self.subTest(state=state):
+                cloud = FakeCloud()
+                if state == "missing":
+                    cloud.bucket_metadata = standardized_bucket()
+                elif state == "mismatch":
+                    cloud.bucket_metadata["projectNumber"] = "999999999999"
+                else:
+                    cloud.bucket_error = c.PermissionDenied(
+                        "Metadata permission denied; ownership unverified"
+                    )
+                cloud_type.return_value = cloud
+                code, stdout, stderr = self.invoke()
+                self.assertEqual(code, 1)
+                self.assertEqual(stdout, "")
+                if state == "missing":
+                    self.assertIn(c.BUCKET_OWNER_QUERY, stderr)
+                elif state == "mismatch":
+                    self.assertIn("999999999999", stderr)
+                    self.assertIn(c.NUMBER, stderr)
+                else:
+                    self.assertIn("permission denied", stderr)
+                self.assertFalse(cloud.mutations())
+
+    @patch("manage.Cloud")
+    def test_project_id_number_mismatch_stops_before_bucket_lookup(self, cloud_type):
+        cloud = cloud_type.return_value
+        cloud.run.return_value = {
+            "projectId": c.PROJECT,
+            "projectNumber": "999999999999",
+        }
+        code, stdout, stderr = self.invoke()
+        self.assertEqual(code, 1)
+        self.assertEqual(stdout, "")
+        self.assertIn("project identity mismatch", stderr)
+        cloud.run.assert_called_once_with("projects", "describe", c.PROJECT)
+
+    @patch("common.subprocess.run", side_effect=FileNotFoundError)
+    def test_missing_sdk_requires_cloud_shell_without_claiming_ownership(self, run):
+        code, stdout, stderr = self.invoke()
+        self.assertEqual(code, 1)
+        self.assertEqual(stdout, "")
+        self.assertIn("gcloud is unavailable", stderr)
+        self.assertIn("Google Cloud Shell", stderr)
+        self.assertNotIn("ownership mismatch", stderr)
+        run.assert_called_once()
 
 
 if __name__ == "__main__":

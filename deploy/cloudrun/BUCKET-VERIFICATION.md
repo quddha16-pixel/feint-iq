@@ -2,6 +2,26 @@
 
 The earlier error, **“Build source bucket belongs to an unexpected project”**, did not distinguish missing ownership metadata from a real mismatch. A parsing defect is verified; the live bucket's owner has **not** been verified in this workspace, which has no gcloud executable or connected Google Cloud identity.
 
+## If the old message still appears
+
+The exact string **“Build source bucket belongs to an unexpected project”** was emitted by `7424f49`. It was removed in the already-pushed correction **f730e7c**. Seeing that exact message means the output is from an older/different script copy or an earlier run; current code does not emit it. The Console's access, location, storage class and encryption settings do not establish the owner project number.
+
+An additional short command is now available after updating a clean `prepare/cloud-run` checkout:
+
+```bash
+bash deploy/cloudrun/iq verify-bucket
+```
+
+This command only reads Cloud Resource Manager's expected project ID/number and the bucket's raw Storage API metadata. It prints a small verification summary only after the exact name/owner/private-access checks pass. It does not fetch IAM policy bindings, create authentication resources, submit builds, deploy, or change billing. A missing SDK, permission denial, missing metadata or mismatched owner fails without a success summary. Metadata errors include the complete read-only gcloud query so authenticated verification can be performed directly.
+
+From the existing clean `prepare/cloud-run` repository folder in Cloud Shell, this single copyable line obtains the current code and runs only that read-only check:
+
+```bash
+git pull --ff-only && bash deploy/cloudrun/iq verify-bucket
+```
+
+Fast-forward-only updating does not discard local work. Stop and share the error if the checkout cannot update; do not reset or force it. The direct gcloud query below remains available without a repository update.
+
 ## Verified SDK behavior
 
 We inspected Google's official SDK **592.0.0** core distribution, version `2026.10.30`, downloaded using its [official component manifest](https://dl.google.com/dl/cloudsdk/channels/rapid/components-2.json). The core archive's SHA-256 matched the manifest: `2de2eb7c365cbeaa2410e92d1080234957b662458229d45af5371a5853d671e1`. No SDK installation, login or project API call was performed. This is evidence about that SDK's formatting, not a claim about the user's installed version or bucket contents.

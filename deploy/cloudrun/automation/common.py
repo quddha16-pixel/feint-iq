@@ -19,6 +19,10 @@ BRANCH = "prepare/cloud-run"
 REF = f"refs/heads/{BRANCH}"
 SERVICE = "identifier-q-api"
 BUCKET = "feint-identifierq-iq-build-source"
+BUCKET_OWNER_QUERY = (
+    f"gcloud storage buckets describe gs://{BUCKET} "
+    "--raw --format='json(name,projectNumber)'"
+)
 ARTIFACTS = "identifier-q"
 IMAGE_BASE = f"{REGION}-docker.pkg.dev/{PROJECT}/{ARTIFACTS}/backend"
 BUILD_SA = f"identifier-q-build@{PROJECT}.iam.gserviceaccount.com"
@@ -80,9 +84,9 @@ class Cloud:
                 if args[:3] == ("storage", "buckets", "describe"):
                     raise PermissionDenied(
                         f"Permission denied reading metadata for gs://{BUCKET}. "
-                        "Verify storage.buckets.get access; the read-only raw gcloud "
-                        "command can identify any additional denied metadata permission. "
-                        "Bucket ownership remains unverified. No IAM change was attempted."
+                        "Bucket ownership remains unverified. Verify storage.buckets.get "
+                        "access; this read-only query can identify the denied metadata "
+                        f"permission:\n{BUCKET_OWNER_QUERY}\nNo IAM change was attempted."
                     )
                 raise PermissionDenied(
                     f"{label}: permission denied. Verify the documented scoped IAM/act-as grants; no automatic IAM repair was attempted."
@@ -280,7 +284,7 @@ def check_bucket(bucket):
     if owner is None:
         raise BucketMetadataError(
             "Cannot verify bucket ownership: raw projectNumber is missing or null. "
-            "Use gcloud storage buckets describe with --raw --format=json. "
+            f"Run this read-only query in authenticated Cloud Shell:\n{BUCKET_OWNER_QUERY}\n"
             "Missing metadata does not establish an ownership mismatch."
         )
     # The JSON API encodes uint64 as a decimal string. Accept an exact JSON

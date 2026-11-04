@@ -8,6 +8,16 @@ This guide does not run commands automatically. **No personal spending, billing 
 
 In Safari, request Desktop Website and use landscape if needed. Use your existing Google login; verify the project is `feint-identifierq`. Cloud Shell supplies gcloud. The link checks out `prepare/cloud-run`; inspect existing working changes rather than discarding them if Cloud Shell reuses a checkout. Run commands from the repository root in its terminal. If a reused checkout is clean but still on the earlier preparation commit, update it with `git pull --ff-only`; never reset or force-pull over local work.
 
+## Verify the bucket alone — read-only
+
+If the old “unexpected project” message still appears, it comes from an earlier script copy/run: the parsing correction was pushed in `f730e7c`. From your existing clean `prepare/cloud-run` repository folder, copy this one line:
+
+```bash
+git pull --ff-only && bash deploy/cloudrun/iq verify-bucket
+```
+
+It updates the scripts and runs only project/bucket metadata reads. Successful output contains the actual verified project number and `ownership_verified: true`. Missing or denied metadata fails closed; no IAM changes are made, no build/deployment is run, and no secret values are printed. Do not discard local changes if updating fails. See [the ownership investigation](BUCKET-VERIFICATION.md) for evidence and the direct gcloud fallback.
+
 ## Inspect now — read-only
 
 ```bash

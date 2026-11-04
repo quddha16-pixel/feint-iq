@@ -2,11 +2,22 @@
 """Cloud Shell / Actions entry point. Defaults never provision or deploy anything."""
 
 import argparse
+import json
 import os
 import sys
 
 from build import build
-from common import PROJECT, REGION, SERVICE, Cloud, Failure, guard, verify_configuration
+from common import (
+    PROJECT,
+    REGION,
+    SERVICE,
+    Cloud,
+    Failure,
+    guard,
+    project_check,
+    verify_configuration,
+    verify_source_bucket,
+)
 from setup import setup
 
 from deploy import deploy
@@ -18,6 +29,10 @@ def main():
     check = sub.add_parser("guard")
     check.add_argument("--purpose", choices=("build", "deploy"), required=True)
     check.add_argument("--ci", action="store_true")
+    sub.add_parser(
+        "verify-bucket",
+        help="Read-only project/owner/access verification; no IAM, build or deployment actions",
+    )
     settings = sub.add_parser(
         "setup", help="Read-only WIF/IAM plan unless --approve-wif-setup is supplied"
     )
@@ -49,6 +64,23 @@ def main():
             commit = guard(args.purpose, args.ci)
             print(
                 f"Approved source/configuration verified: {commit}. No cloud command executed."
+            )
+        elif args.command == "verify-bucket":
+            cloud = Cloud()
+            project_check(cloud)
+            bucket = verify_source_bucket(cloud)
+            print(
+                json.dumps(
+                    {
+                        "bucket": bucket["name"],
+                        "project_id": PROJECT,
+                        "project_number": str(bucket["projectNumber"]),
+                        "ownership_verified": True,
+                        "access_settings_verified": True,
+                        "read_only": True,
+                    },
+                    indent=2,
+                )
             )
         elif args.command == "first-deploy":
             if not args.approve_deployment:
