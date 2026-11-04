@@ -11,6 +11,19 @@ for (const name of ["build-backend.yml", "deploy-backend.yml"]) {
     ["workflow_dispatch"],
     "Manual dispatch only",
   );
+  const trial = document.on.workflow_dispatch.inputs.trial_confirmed;
+  assert.equal(
+    trial.type,
+    "boolean",
+    "Trial confirmation must be an explicit checkbox",
+  );
+  assert.equal(trial.required, true);
+  assert.equal(trial.default, false, "Never pre-confirm trial eligibility");
+  assert.equal(
+    document.env.TRIAL_CONFIRMED,
+    "${{ inputs.trial_confirmed }}",
+    "Forward the actual dispatch confirmation without a truthy fallback",
+  );
   assert.equal(
     document.permissions["id-token"],
     undefined,

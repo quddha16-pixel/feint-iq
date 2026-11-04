@@ -254,7 +254,12 @@ def guard(purpose, ci=False, env=None):
             )
         if env.get("TRIAL_CONFIRMED") != "true":
             raise Failure(
-                "Confirm unupgraded Google Cloud Free Trial and Gemini Free Tier. No personal spending or paid upgrade is authorized."
+                "Confirm unupgraded Google Cloud Free Trial and Gemini Free Tier. "
+                "The trial_confirmed input was not accepted as true. "
+                f"Start a NEW Run workflow on {BRANCH}; check the trial confirmation "
+                "box only after verifying sufficient trial credit/days and Gemini Free Tier. "
+                "Re-run jobs retains the original input. "
+                "No personal spending or paid upgrade is authorized."
             )
     remote = git("remote", "get-url", "origin")
     if remote not in (

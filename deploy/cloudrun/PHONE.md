@@ -44,11 +44,25 @@ This prepares build authentication only. It does not start a build. Keep deploym
 
 1. Repository → Settings → Environments → create `identifierq-build`; required reviewer: founder; selected branch: `prepare/cloud-run` only.
 2. Settings → Secrets and variables → Actions → **Variables** → `IDENTIFIERQ_BUILD_ENABLED=true`, after approved setup succeeds. No Gemini/pilot secret values belong here. Leave `IDENTIFIERQ_DEPLOY_ENABLED` absent/false.
-3. Request separate authorization to register just the workflow files on `main` while skipping the Pages push workflow. Codex has not done this. Do not merge the whole preparation branch or publish the frontend to make Actions visible.
+3. Build-only workflow registration on `main` is now complete in `d3069fb`, with the Pages push workflow suppressed. Only `build-backend.yml` was registered; the deployment workflow remains unregistered on `main`. Do not merge the whole preparation branch or publish the frontend to make Actions visible.
 
 ## Run an authorized build
 
 Once registered: Actions → **Build Identifier Q backend** → Run workflow → branch **prepare/cloud-run** → confirm trial-only use → Run → approve the environment. The summary gives the Cloud Build ID and immutable image digest. **A build does not deploy.**
+
+### If verification stops at the Free Trial confirmation
+
+The checkbox is intentionally unchecked by default. The workflow passes `inputs.trial_confirmed` directly into `TRIAL_CONFIRMED`; only the exact value `true` passes the guard. A required Boolean input can still be `false`. In run `41935665456`, logs showed `AUTOMATION_ENABLED=true` and `TRIAL_CONFIRMED=false`; the Cloud Build job was skipped. No Cloud Build ID or image digest was produced by that run. This is a missing affirmative confirmation, not a verified forwarding defect.
+
+On iPhone:
+
+1. Open [the build workflow](https://github.com/quddha16-pixel/feint-iq/actions/workflows/build-backend.yml) in Safari. Request Desktop Website or rotate to landscape if the controls are hidden.
+2. Tap **Run workflow** to open a **new dispatch**, then select **prepare/cloud-run** in the branch menu. `main` contains registration only.
+3. Verify the Google Cloud account remains an unupgraded Free Trial with sufficient promotional credits/days, and Gemini remains Free Tier. Confirm only if these conditions hold; do not upgrade billing or activate paid Gemini.
+4. Tick **Confirm unupgraded GCP Free Trial, sufficient credit/days and Gemini Free Tier**, then tap the **Run workflow** button inside that form. Approve `identifierq-build` only if a configured reviewer prompt appears.
+5. Inspect the new run. Trial confirmation should show `TRIAL_CONFIRMED: true`; a successful Cloud Build later produces an ID and immutable image digest for review. This confirmation records the founder's assertion; it does not query billing or guarantee remaining credit.
+
+**Re-run jobs** reuses the failed dispatch's original `false` input. Use the workflow's new-dispatch form to change it. Never hardcode `TRIAL_CONFIRMED=true`, default the checkbox to true, or remove the guard. No retry is launched by reading this guide.
 
 If registration/WIF is deferred, the existing secure owner Cloud Shell login can run the already authorized first build with the same code:
 

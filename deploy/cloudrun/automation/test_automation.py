@@ -333,6 +333,27 @@ class Guards(unittest.TestCase):
             c.guard("deploy", True, {**self.env("deploy"), "AUTOMATION_ENABLED": ""})
         git.assert_not_called()
 
+    @patch("common.Cloud.run")
+    @patch("common.git")
+    def test_trial_requires_explicit_true_before_source_or_cloud_access(
+        self, git, cloud
+    ):
+        for purpose in ("build", "deploy"):
+            for value in (None, "", "false", "False", "TRUE", "1", "yes", True):
+                env = self.env(purpose)
+                if value is None:
+                    env.pop("TRIAL_CONFIRMED")
+                else:
+                    env["TRIAL_CONFIRMED"] = value
+                with self.subTest(purpose=purpose, value=value):
+                    with self.assertRaisesRegex(c.Failure, "trial_confirmed") as error:
+                        c.guard(purpose, True, env)
+                    self.assertIn("NEW Run workflow", str(error.exception))
+                    self.assertIn(c.BRANCH, str(error.exception))
+                    self.assertIn("original input", str(error.exception))
+        git.assert_not_called()
+        cloud.assert_not_called()
+
     def test_source_bucket_requires_expected_project_and_private_access_settings(self):
         c.check_bucket(raw_bucket())
         for field, value in (
