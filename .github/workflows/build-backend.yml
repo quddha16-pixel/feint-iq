@@ -1,0 +1,91 @@
+name: Build Identifier Q backend (manual, no deployment)
+
+on:
+  workflow_dispatch:
+    inputs:
+      trial_confirmed:
+        description: Confirm unupgraded GCP Free Trial, sufficient credit/days and Gemini Free Tier
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: identifierq-backend-build
+  cancel-in-progress: false
+
+env:
+  AUTOMATION_ENABLED: ${{ vars.IDENTIFIERQ_BUILD_ENABLED }}
+  TRIAL_CONFIRMED: ${{ inputs.trial_confirmed }}
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify trusted source and reviewed cloud configuration
+        run: python3 deploy/cloudrun/automation/manage.py guard --purpose build --ci
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - name: Install locked dependencies and media tools
+        run: |
+          npm ci --no-audit --no-fund
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg python3-venv
+      - name: Type check, lint, test and build the application
+        run: |
+          npm run typecheck
+          npm run lint
+          npm test
+          npm audit --audit-level=high --fetch-retries=0 --fetch-timeout=30000
+          npm run build
+          python3 -m venv "$RUNNER_TEMP/identifierq-python-tools"
+          "$RUNNER_TEMP/identifierq-python-tools/bin/pip" install ruff==0.14.4 --disable-pip-version-check
+          "$RUNNER_TEMP/identifierq-python-tools/bin/ruff" check deploy/cloudrun/automation
+          "$RUNNER_TEMP/identifierq-python-tools/bin/ruff" format --check deploy/cloudrun/automation
+          npm run test:infra
+          npm run lint:workflows
+      - name: Browser regressions (synthetic providers only)
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+        env:
+          CI: true
+
+  cloud-build:
+    needs: quality
+    if: github.repository == 'quddha16-pixel/feint-iq' && github.ref == 'refs/heads/prepare/cloud-run' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: identifierq-build
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Recheck source before requesting a Google token
+        run: python3 deploy/cloudrun/automation/manage.py guard --purpose build --ci
+      - name: Authenticate through build-only Workload Identity Federation
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: projects/334840153796/locations/global/workloadIdentityPools/identifierq-github/providers/github-build
+          service_account: identifier-q-ci-build@feint-identifierq.iam.gserviceaccount.com
+          project_id: feint-identifierq
+          create_credentials_file: true
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      - name: Submit one build, wait for its outcome and capture immutable digest
+        id: build
+        run: python3 deploy/cloudrun/automation/manage.py build --ci --approve-trial-build
+      - name: Explain failure boundary
+        if: failure()
+        run: echo 'Build failed or authentication/setup is incomplete. Inspect this run and any recorded Cloud Build ID before retrying. No Cloud Run deployment or Pages publication is part of this workflow.'
