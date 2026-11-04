@@ -26,3 +26,15 @@ attachments
 **/*.MP4
 **/*.MOV
 **/*.WEBM
+
+# Short-lived google-github-actions/auth files must never be committed or uploaded.
+gha-creds-*.json
+**/gha-creds-*.json
+**/__pycache__/
+
+deploy/cloudrun/automation/test_*.py
+
+.ruff_cache/
+**/.ruff_cache/
+*.tsbuildinfo
+**/*.tsbuildinfo

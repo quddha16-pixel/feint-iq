@@ -38,7 +38,7 @@ export const emptyDraft = (
 });
 export function readStored<T>(
   key: string,
-  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  schema: z.ZodType<T, unknown>,
   fallback: T,
 ): { value: T; error?: string } {
   try {

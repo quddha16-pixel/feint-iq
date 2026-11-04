@@ -7,6 +7,8 @@ steps:
       - build
       - --file
       - server/Dockerfile
+      - --label
+      - org.opencontainers.image.revision=${_COMMIT_SHA}
       - --tag
       - ${_IMAGE}
       - .

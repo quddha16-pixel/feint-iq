@@ -1,5 +1,7 @@
 # Identifier Q — deployment readiness and Cloud Shell runbook
 
+**For the new automated Actions/WIF process, start with [AUTOMATION.md](AUTOMATION.md) or the [short iPhone guide](PHONE.md).** The founder reports the original infrastructure below is now provisioned; inspect/reuse it and do not rerun creation commands blindly. This older manual runbook remains reference material.
+
 **Reviewed 2026-11-03. Prepared, NOT DEPLOYED.** Project `feint-identifierq` (`334840153796`), region `us-central1`. This branch is `prepare/cloud-run`; `main` and the existing GitHub Pages deployment remain unchanged. No Google Cloud resource, IAM grant, API enablement, build, secret access, or billing change has been performed here.
 
 ## Decision and remaining blockers
@@ -169,13 +171,13 @@ export GEMINI_SECRET_VERSION ACCESS_SECRET_VERSION
 [[ "$ACCESS_SECRET_VERSION" =~ ^[1-9][0-9]*$ ]]
 
 gcloud meta list-files-for-upload
-RELEASE="$(git rev-parse --short=12 HEAD)"
-IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPOSITORY/backend:$RELEASE"
+RELEASE="$(git rev-parse HEAD)"
+IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPOSITORY/backend:sha-$RELEASE-$(date +%s)"
 gcloud builds submit . --project="$PROJECT_ID" --region="$REGION" \
   --config=deploy/cloudrun/cloudbuild.yaml \
   --service-account="projects/$PROJECT_ID/serviceAccounts/$BUILD_SA" \
   --gcs-source-staging-dir="gs://$BUILD_SOURCE_BUCKET/source" \
-  --substitutions="_IMAGE=$IMAGE"
+  --substitutions="_IMAGE=$IMAGE,_COMMIT_SHA=$RELEASE"
 DIGEST="$(gcloud artifacts docker images describe "$IMAGE" \
   --project="$PROJECT_ID" --format='value(image_summary.digest)')"
 test -n "$DIGEST"

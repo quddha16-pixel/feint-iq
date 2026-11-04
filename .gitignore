@@ -6,3 +6,11 @@ dist/
 playwright-report/
 test-results/
 *.tsbuildinfo
+
+# Short-lived google-github-actions/auth files must never be committed or uploaded.
+gha-creds-*.json
+**/gha-creds-*.json
+**/__pycache__/
+
+.ruff_cache/
+**/.ruff_cache/

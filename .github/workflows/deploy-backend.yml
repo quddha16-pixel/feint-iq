@@ -1,0 +1,104 @@
+name: Deploy or roll back Identifier Q backend (LOCKED)
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Redeploy the approved digest using the current safe configuration
+        type: choice
+        required: true
+        options: [deploy, rollback]
+      build_id:
+        description: Successful Cloud Build UUID from the build summary
+        type: string
+        required: true
+      digest:
+        description: Exact sha256 digest from that build summary (include sha256:)
+        type: string
+        required: true
+      gemini_version:
+        description: ENABLED numeric Gemini secret version (never the key)
+        type: number
+        required: true
+      pilot_version:
+        description: ENABLED numeric pilot secret version (never the token)
+        type: number
+        required: true
+      authorization:
+        description: Type DEPLOY or ROLLBACK only after explicit authorization
+        type: string
+        required: true
+      trial_confirmed:
+        description: Confirm unupgraded GCP Free Trial, sufficient credit/days and Gemini Free Tier
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: identifierq-backend-deploy
+  cancel-in-progress: false
+
+env:
+  AUTOMATION_ENABLED: ${{ vars.IDENTIFIERQ_DEPLOY_ENABLED }}
+  IDENTIFIERQ_DEPLOY_ENABLED: ${{ vars.IDENTIFIERQ_DEPLOY_ENABLED }}
+  TRIAL_CONFIRMED: ${{ inputs.trial_confirmed }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fail closed while deployment is locked; no Google credentials requested
+        run: python3 deploy/cloudrun/automation/manage.py guard --purpose deploy --ci
+      - name: Verify explicit operation authorization and integration contracts
+        env:
+          OPERATION: ${{ inputs.operation }}
+          AUTHORIZATION: ${{ inputs.authorization }}
+        run: |
+          test "$AUTHORIZATION" = "$(printf '%s' "$OPERATION" | tr '[:lower:]' '[:upper:]')"
+          python3 -m unittest discover -s deploy/cloudrun/automation -p 'test_*.py' -v -b
+
+  deploy:
+    needs: validate
+    if: vars.IDENTIFIERQ_DEPLOY_ENABLED == 'true' && github.repository == 'quddha16-pixel/feint-iq' && github.ref == 'refs/heads/prepare/cloud-run' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: identifierq-deploy
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Recheck trusted source before authentication
+        run: python3 deploy/cloudrun/automation/manage.py guard --purpose deploy --ci
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: projects/334840153796/locations/global/workloadIdentityPools/identifierq-github/providers/github-deploy
+          service_account: identifier-q-ci-deploy@feint-identifierq.iam.gserviceaccount.com
+          project_id: feint-identifierq
+          create_credentials_file: true
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      - name: Deploy only the separately approved image and check public probes
+        env:
+          BUILD_ID: ${{ inputs.build_id }}
+          IMAGE_DIGEST: ${{ inputs.digest }}
+          GEMINI_VERSION: ${{ inputs.gemini_version }}
+          PILOT_VERSION: ${{ inputs.pilot_version }}
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          python3 deploy/cloudrun/automation/manage.py deploy --ci --approve-deployment \
+            --operation "$OPERATION" --build-id "$BUILD_ID" --digest "$IMAGE_DIGEST" \
+            --gemini-version "$GEMINI_VERSION" --pilot-version "$PILOT_VERSION"
+      - name: Explain partial deployment failure
+        if: failure()
+        run: echo 'A failed probe can occur after Cloud Run has already changed. Inspect the recorded image/revision and Console before retrying. No automatic rollback, Gemini call or frontend publication was attempted.'

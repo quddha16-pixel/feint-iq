@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Short iPhone/Cloud Shell entry point; no implicit approvals or default mutations.
+set -euo pipefail
+exec python3 "$(dirname "${BASH_SOURCE[0]}")/automation/manage.py" "$@"
