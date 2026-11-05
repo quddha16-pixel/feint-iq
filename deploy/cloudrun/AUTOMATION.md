@@ -37,6 +37,8 @@ Deployment accepts a successful Cloud Build ID plus its exact digest and enabled
 
 ## Exact Google trust
 
+**Immutable subject correction:** GitHub's repository OIDC API reports `use_default=true`, `use_immutable_subject=true` and prefix `repo:quddha16-pixel@297506389/feint-iq@1443546506`. The original name-only subject cannot match this repository's default token. `common.py` now uses the exact immutable prefix with each job environment, retaining all other equality conditions and mappings. See [WIF-AUTHENTICATION.md](WIF-AUTHENTICATION.md) for evidence, claim comparisons, read-only inspection and a narrowly scoped owner-operated provider update. Existing providers are never silently rewritten by setup; build-only recovery requires the exact old condition and an explicit flag. No workflow dispatch is performed by those helpers.
+
 Repository IDs were read from GitHub's API: repository **1443546506**, owner **297506389**. One dedicated pool, `identifierq-github`, has two independently restricted providers:
 
 | Provider        | Workflow                               | GitHub environment   | Impersonated service account                                       |
@@ -44,7 +46,7 @@ Repository IDs were read from GitHub's API: repository **1443546506**, owner **2
 | `github-build`  | `.github/workflows/build-backend.yml`  | `identifierq-build`  | `identifier-q-ci-build@feint-identifierq.iam.gserviceaccount.com`  |
 | `github-deploy` | `.github/workflows/deploy-backend.yml` | `identifierq-deploy` | `identifier-q-ci-deploy@feint-identifierq.iam.gserviceaccount.com` |
 
-Each provider requires **all** of: those numeric repository/owner IDs, exact repository name, `refs/heads/prepare/cloud-run`, event `workflow_dispatch`, its exact `workflow_ref` at that branch, and the environment-specific subject `repo:quddha16-pixel/feint-iq:environment:identifierq-build` or `identifierq-deploy`. Issuer: `https://token.actions.githubusercontent.com`; default provider audience checks stay enabled. Forks, pull requests, alternate workflows and other branches do not qualify. Changing branch/workflow/ownership requires a separate trust review; setup refuses to overwrite an existing provider whose trust differs.
+Each provider requires **all** of: those numeric repository/owner IDs, exact repository name, `refs/heads/prepare/cloud-run`, event `workflow_dispatch`, its exact `workflow_ref` at that branch, and the environment-specific subject `repo:quddha16-pixel@297506389/feint-iq@1443546506:environment:identifierq-build` or the same prefix with `identifierq-deploy`. Issuer: `https://token.actions.githubusercontent.com`; default provider audience checks stay enabled. Forks, pull requests, alternate workflows and other branches do not qualify. Changing branch/workflow/ownership requires a separate trust review; setup refuses to overwrite an existing provider whose trust differs.
 
 Both providers share a pool but map **different constant pipeline attributes** (`'build'` / `'deploy'`). The service-account Workload Identity User grant uses only its own `attribute.pipeline/build` or `/deploy` principal set. A build token cannot select the deploy account. No service-account JSON key or project-wide Token Creator is needed. The exact CEL/mapping/principal strings are emitted by the read-only planner.
 

@@ -200,18 +200,28 @@ def provider(purpose):
     return f"projects/{NUMBER}/locations/global/workloadIdentityPools/{POOL}/providers/github-{purpose}"
 
 
-def trust(purpose):
+def expected_oidc_claims(purpose):
+    if purpose not in ("build", "deploy"):
+        raise Failure("Unknown OIDC purpose.")
     workflow = "build-backend.yml" if purpose == "build" else "deploy-backend.yml"
+    owner, repo = REPOSITORY.split("/")
+    # GitHub's repository OIDC settings confirm use_immutable_subject=true.
+    # Keep names AND immutable IDs; do not accept the legacy name-only subject.
+    return {
+        "repository_id": REPOSITORY_ID,
+        "repository_owner_id": OWNER_ID,
+        "repository": REPOSITORY,
+        "ref": REF,
+        "event_name": "workflow_dispatch",
+        "workflow_ref": f"{REPOSITORY}/.github/workflows/{workflow}@{REF}",
+        "sub": f"repo:{owner}@{OWNER_ID}/{repo}@{REPOSITORY_ID}:environment:identifierq-{purpose}",
+    }
+
+
+def trust(purpose):
     return " && ".join(
-        [
-            f"assertion.repository_id == '{REPOSITORY_ID}'",
-            f"assertion.repository_owner_id == '{OWNER_ID}'",
-            f"assertion.repository == '{REPOSITORY}'",
-            f"assertion.ref == '{REF}'",
-            "assertion.event_name == 'workflow_dispatch'",
-            f"assertion.workflow_ref == '{REPOSITORY}/.github/workflows/{workflow}@{REF}'",
-            f"assertion.sub == 'repo:{REPOSITORY}:environment:identifierq-{purpose}'",
-        ]
+        f"assertion.{key} == '{value}'"
+        for key, value in expected_oidc_claims(purpose).items()
     )
 
 

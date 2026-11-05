@@ -350,7 +350,8 @@ def check_provider(item, purpose):
         or oidc.get("allowedAudiences")
     ):
         raise Failure(
-            "Existing WIF provider differs from the exact reviewed trust. No automatic replacement/update is permitted."
+            "Existing WIF provider differs from the exact reviewed trust. No automatic replacement/update is permitted. "
+            "For the build provider's immutable-subject investigation, use read-only verify-wif."
         )
 
 

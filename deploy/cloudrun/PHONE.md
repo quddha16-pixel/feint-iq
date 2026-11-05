@@ -48,6 +48,8 @@ This prepares build authentication only. It does not start a build. Keep deploym
 
 ## Run an authorized build
 
+If authentication fails with **“The given credential is rejected by the attribute condition”**, use the [immutable OIDC subject investigation and recovery](WIF-AUTHENTICATION.md). It starts with read-only `verify-wif`; the separate optional `repair-wif --approve-subject-update` changes only the recognized old build-provider subject condition. Neither command starts a build. Do not rerun the build until configuration is verified and the retry is authorized.
+
 Once registered: Actions → **Build Identifier Q backend** → Run workflow → branch **prepare/cloud-run** → confirm trial-only use → Run → approve the environment. The summary gives the Cloud Build ID and immutable image digest. **A build does not deploy.**
 
 ### If verification stops at the Free Trial confirmation

@@ -19,6 +19,7 @@ from common import (
     verify_source_bucket,
 )
 from setup import setup
+from wif import repair_build_trust, verify_build_trust
 
 from deploy import deploy
 
@@ -33,6 +34,14 @@ def main():
         "verify-bucket",
         help="Read-only project/owner/access verification; no IAM, build or deployment actions",
     )
+    sub.add_parser(
+        "verify-wif",
+        help="Read-only build provider/subject inspection; no JWTs or builds",
+    )
+    repair = sub.add_parser(
+        "repair-wif", help="Only migrate the exact known build-provider subject"
+    )
+    repair.add_argument("--approve-subject-update", action="store_true")
     settings = sub.add_parser(
         "setup", help="Read-only WIF/IAM plan unless --approve-wif-setup is supplied"
     )
@@ -70,6 +79,10 @@ def main():
             print(
                 f"Approved source/configuration verified: {commit}. No cloud command executed."
             )
+        elif args.command == "verify-wif":
+            verify_build_trust(Cloud())
+        elif args.command == "repair-wif":
+            repair_build_trust(Cloud(), args.approve_subject_update)
         elif args.command == "verify-bucket":
             cloud = Cloud()
             project_check(cloud)
