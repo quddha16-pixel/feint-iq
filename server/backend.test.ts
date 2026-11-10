@@ -130,7 +130,7 @@ describe("authenticated live-transport foundation (synthetic provider only)", ()
     expect(health.limits).toEqual({
       minSeconds: 10,
       maxSeconds: 300,
-      maxBytes: 100 * 1024 * 1024,
+      maxBytes: 25 * 1024 * 1024,
     });
     expect(health.tracking).toBe(false);
   });

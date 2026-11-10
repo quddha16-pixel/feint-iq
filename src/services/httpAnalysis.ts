@@ -1,3 +1,6 @@
+import { readAnalysisStream, AnalysisJobFailure } from "./analysisStream";
+import { REQUEST_PROTOCOL, REQUEST_TIMEOUT_MS } from "../domain/transport";
+import type { CompletedAnalysisReport } from "../domain/contracts";
 import { z } from "zod";
 import {
   jobSchema,
@@ -37,16 +40,22 @@ export async function connectAnalysisService(
     );
   const keys = new Map<string, string>();
   const fingerprintsByJob = new Map<string, string>();
-  const call = async (
+  const completed = new Map<string, CompletedAnalysisReport>();
+  const open = async (
     path: string,
     init: RequestInit = {},
     signal?: AbortSignal,
+    timeout = 15000,
   ) => {
     const controller = new AbortController();
     const abort = () => controller.abort();
     if (signal?.aborted) controller.abort();
     else signal?.addEventListener("abort", abort, { once: true });
-    const timer = setTimeout(abort, signal ? 120000 : 15000);
+    const timer = setTimeout(abort, timeout);
+    const dispose = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+    };
     try {
       let response: Response;
       try {
@@ -71,25 +80,41 @@ export async function connectAnalysisService(
           message =
             typeof body.message === "string" ? body.message.slice(0, 1000) : "";
         } catch {
-          /* Non-JSON error responses remain actionable by status. */
+          /* Error status remains actionable without JSON. */
         }
         throw new Error(
           message || `Backend request failed (HTTP ${response.status}).`,
         );
       }
-      try {
-        return await response.json();
-      } catch {
-        throw new Error(
-          "The backend returned unreadable or incomplete JSON. Retry after checking its status.",
-        );
-      }
+      return { response, dispose, controller };
+    } catch (error) {
+      dispose();
+      if (signal?.aborted)
+        throw new DOMException("Analysis canceled.", "AbortError");
+      throw error;
+    }
+  };
+  const call = async (
+    path: string,
+    init: RequestInit = {},
+    signal?: AbortSignal,
+  ) => {
+    const opened = await open(path, init, signal);
+    try {
+      return await opened.response.json();
+    } catch {
+      throw new Error(
+        "The backend returned unreadable or incomplete JSON. Check its status before explicitly retrying.",
+      );
     } finally {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", abort);
+      opened.dispose();
     }
   };
   const health = engineHealthSchema.parse(await call("/health"));
+  if (health.available && health.protocol !== REQUEST_PROTOCOL)
+    throw new Error(
+      "This backend uses an unsupported processing protocol. Update it to request-bound processing before connecting.",
+    );
   const service: AnalysisService = {
     capabilities: {
       available: health.available,
@@ -97,7 +122,7 @@ export async function connectAnalysisService(
       cancel: true,
       tracking: false,
     },
-    async submit(input, signal, onUploadStart) {
+    async submit(input, signal, onUploadStart, onJobUpdate) {
       validateSubmission(input, health);
       const fingerprint = JSON.stringify({
         video: input.video,
@@ -115,24 +140,59 @@ export async function connectAnalysisService(
       );
       form.append("video", input.file, input.file.name);
       onUploadStart?.();
-      const job = jobSchema.parse(
-        await call(
-          "/analyses",
-          { method: "POST", headers: { "idempotency-key": key }, body: form },
-          signal,
-        ),
+      const opened = await open(
+        "/analyses",
+        { method: "POST", headers: { "idempotency-key": key }, body: form },
+        signal,
+        REQUEST_TIMEOUT_MS,
       );
-      if (
-        JSON.stringify(job.configuration) !==
-          JSON.stringify(configSchema.parse(input.configuration)) ||
-        job.video.id !== input.video.id
-      )
-        throw new Error(
-          "The backend changed the submitted fighter, discipline, or video. The job was rejected.",
+      try {
+        const { job, report } = await readAnalysisStream(
+          opened.response,
+          (update) => {
+            if (
+              update.id !== key ||
+              update.video.id !== input.video.id ||
+              JSON.stringify(update.configuration) !==
+                JSON.stringify(configSchema.parse(input.configuration))
+            )
+              throw new Error(
+                "The backend changed the submitted fighter, discipline, or video.",
+              );
+            fingerprintsByJob.set(update.id, fingerprint);
+            onJobUpdate?.(update);
+          },
         );
-      fingerprintsByJob.set(job.id, fingerprint);
-      if (["failed", "canceled"].includes(job.status)) keys.delete(fingerprint);
-      return job;
+        if (
+          job.id !== key ||
+          job.video.id !== input.video.id ||
+          JSON.stringify(job.configuration) !==
+            JSON.stringify(configSchema.parse(input.configuration))
+        )
+          throw new Error(
+            "The completed report does not match the submitted footage and configuration.",
+          );
+        completed.set(job.id, report);
+        while (completed.size > 20)
+          completed.delete(completed.keys().next().value!);
+        fingerprintsByJob.set(job.id, fingerprint);
+        return job;
+      } catch (error) {
+        if (
+          error instanceof AnalysisJobFailure &&
+          keys.get(fingerprint) === key
+        )
+          keys.delete(fingerprint);
+        if (signal?.aborted)
+          throw new DOMException("Analysis canceled.", "AbortError");
+        if (opened.controller.signal.aborted)
+          throw new Error(
+            "Analysis request timed out. No partial report was saved; check provider usage before explicitly retrying.",
+          );
+        throw error;
+      } finally {
+        opened.dispose();
+      }
     },
     async status(id, signal) {
       const job = jobSchema.parse(
@@ -146,6 +206,8 @@ export async function connectAnalysisService(
       return job;
     },
     async report(id, signal) {
+      const saved = completed.get(id);
+      if (saved) return saved;
       const report = reportSchema.parse(
         await call(`/analyses/${encodeURIComponent(id)}/report`, {}, signal),
       );
@@ -155,7 +217,9 @@ export async function connectAnalysisService(
     },
     async cancel(id) {
       await call(`/analyses/${encodeURIComponent(id)}`, { method: "DELETE" });
-      keys.clear();
+      const fingerprint = fingerprintsByJob.get(id);
+      if (fingerprint && keys.get(fingerprint) === id) keys.delete(fingerprint);
+      fingerprintsByJob.delete(id);
     },
     async list() {
       return z.array(reportSchema).parse(await call("/analyses"));

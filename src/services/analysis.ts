@@ -25,6 +25,7 @@ export interface AnalysisService {
     input: AnalysisSubmission,
     signal?: AbortSignal,
     onUploadStart?: () => void,
+    onJobUpdate?: (job: AnalysisJob) => void,
   ): Promise<AnalysisJob>;
   status(id: string, signal?: AbortSignal): Promise<AnalysisJob>;
   report(id: string, signal?: AbortSignal): Promise<CompletedAnalysisReport>;

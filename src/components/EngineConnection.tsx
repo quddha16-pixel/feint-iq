@@ -96,11 +96,12 @@ export function EngineConnection({
         </div>
       </form>
       <p className="subtle-note">
-        The pilot supports boxing clips from 10 seconds to 5 minutes, up to 100
-        MB, and requires an identity confirmation frame. On explicit submission,
-        your clip goes to the backend and sampled frames go to its configured
-        provider. No account is created. Provider access and real-footage
-        quality still need validation.
+        The pilot supports boxing clips from 10 seconds to 5 minutes, up to 25
+        MiB, and requires an identity confirmation frame. On explicit
+        submission, your clip goes to the backend and sampled frames go to its
+        configured provider. Keep this tab open and your phone unlocked until
+        analysis finishes. No account is created. Provider access and
+        real-footage quality still need validation.
       </p>
     </section>
   );

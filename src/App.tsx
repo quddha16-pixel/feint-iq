@@ -50,6 +50,7 @@ export function App() {
     videoError,
     error,
     status,
+    processingDetail,
     frame,
     frames,
     removeFrame,
@@ -177,7 +178,7 @@ export function App() {
         <main id="main-content" tabIndex={-1}>
           {["uploading", "queued", "processing"].includes(status) && (
             <Notice>
-              Analysis {status}.{" "}
+              Analysis {status}. {processingDetail && `${processingDetail}. `}{" "}
               {status === "uploading"
                 ? "Sending your footage to the connected backend."
                 : "Progress is indeterminate; no percentage is estimated."}{" "}

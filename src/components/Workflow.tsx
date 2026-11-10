@@ -480,7 +480,7 @@ export function Workflow(p: Props) {
                 </div>
                 <Notice>
                   {p.engineAvailable
-                    ? "Connected boxing pilot: generating sends this clip to your backend and sampled frames to its provider. Source files are deleted after processing; temporary reports expire after 15 minutes. Only qualitative findings are returned. No continuous tracking, exact event timing, or scoring is claimed."
+                    ? "Connected boxing pilot: generating sends this clip to your backend and sampled frames to its provider. Keep this tab open and your phone unlocked until the report arrives. Processing does not continue reliably after a disconnection. Source files are removed before a successful result; save or export the completed report in this browser. Only qualitative findings are returned. No continuous tracking, exact event timing, or scoring is claimed."
                     : "The analysis engine requires integration. You can validate this setup, but no video will be uploaded and no assessment will be generated."}
                 </Notice>
                 <button
