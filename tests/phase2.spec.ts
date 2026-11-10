@@ -1,9 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { createBackend } from "../server/app";
+import { createStreamingTestBackend as createBackend } from "./streaming-backend";
 import type { AnalysisConfiguration } from "../src/domain/contracts";
 const token = "synthetic-browser-test-token-not-for-production";
 let backend: Awaited<ReturnType<typeof createBackend>>;
 let captured: AnalysisConfiguration | undefined;
+let holdAnalysis = false;
+let providerCanceled = false;
 test.beforeAll(async () => {
   backend = await createBackend({
     accessToken: token,
@@ -11,8 +13,19 @@ test.beforeAll(async () => {
     provider: {
       name: "SYNTHETIC BROWSER TEST ADAPTER",
       model: "not-a-real-analysis",
-      analyze: async (video, configuration) => {
+      analyze: async (video, configuration, signal) => {
         captured = configuration;
+        if (holdAnalysis)
+          await new Promise((_, reject) =>
+            signal.addEventListener(
+              "abort",
+              () => {
+                providerCanceled = true;
+                reject(new Error("Synthetic test cancellation"));
+              },
+              { once: true },
+            ),
+          );
         return {
           identityConfirmed: true,
           identityExplanation:
@@ -103,7 +116,7 @@ test("identity references remain independent of screen position and can be remov
   await page.getByRole("button", { name: "Remove identity frame 1" }).click();
   await expect(page.locator(".identity-references li")).toHaveCount(1);
 });
-test("real HTTP upload, media decoding, polling and report rendering with an explicitly synthetic provider", async ({
+test("real HTTP upload, media decoding, streamed completion and report rendering with an explicitly synthetic provider", async ({
   page,
 }) => {
   await page.goto("/#/settings");
@@ -264,4 +277,62 @@ test("Shades Of renders supported comparisons with evidence links, and does not 
   await expect(
     page.getByRole("heading", { name: "Dmitry Bivol", exact: true }),
   ).toHaveCount(0);
+});
+
+test("real processing stages lock configuration and cancel an active request without a partial report", async ({
+  page,
+}) => {
+  holdAnalysis = true;
+  providerCanceled = false;
+  await page.goto("/#/settings");
+  await page.getByLabel("Backend URL").fill(backend.listeningOrigin);
+  await page.getByLabel("Pilot session access token").fill(token);
+  await page.getByRole("button", { name: "Connect backend" }).click();
+  await expect(
+    page.getByText(/provider configured but live accuracy/),
+  ).toBeVisible();
+  await page.goto("/#/new");
+  await page
+    .getByLabel("Choose video file")
+    .setInputFiles("/tmp/identifier-q-tests/test-footage.webm");
+  await expect(page.getByText(/Local preview ready/)).toBeVisible();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page
+    .getByLabel("Fighter name or identifier")
+    .fill("Synthetic cancellation test");
+  await page.getByRole("radio", { name: /Red corner/ }).check();
+  await expect
+    .poll(() =>
+      page
+        .getByLabel("Fighter identification video")
+        .evaluate((v: HTMLVideoElement) => v.readyState),
+    )
+    .toBeGreaterThanOrEqual(2);
+  await page.getByRole("button", { name: "Use current frame center" }).click();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Generate performance analysis" })
+    .click();
+  await expect(page.getByText(/Reviewing sampled frames/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "boxing", exact: true }).first(),
+  ).toBeDisabled();
+  await page
+    .getByRole("button", { name: "Cancel analysis", exact: true })
+    .first()
+    .click();
+  await expect.poll(() => providerCanceled).toBe(true);
+  await expect(
+    page.getByRole("heading", { name: "Performance overview" }),
+  ).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("identifier-q.reports.v1") ?? "[]"),
+    ),
+  ).toHaveLength(0);
+  await expect(
+    page.getByRole("button", { name: "boxing", exact: true }).first(),
+  ).toBeEnabled();
+  holdAnalysis = false;
 });

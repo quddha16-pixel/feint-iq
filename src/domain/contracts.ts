@@ -327,6 +327,9 @@ export const jobSchema = z
     video: videoSchema,
     status: statusSchema,
     progress: z.number().min(0).max(100).optional(),
+    stage: z
+      .enum(["decoding", "analyzing", "validating", "cleaning", "completed"])
+      .optional(),
     error: z.string().max(10000).optional(),
     reportId: id.optional(),
   })
@@ -343,6 +346,7 @@ export interface AnalysisJob {
   video: VideoAsset;
   status: AnalysisStatus;
   progress?: number;
+  stage?: "decoding" | "analyzing" | "validating" | "cleaning" | "completed";
   error?: string;
   reportId?: string;
 }
