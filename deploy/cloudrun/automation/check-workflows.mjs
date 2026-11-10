@@ -87,6 +87,44 @@ for (const name of ["build-backend.yml", "deploy-backend.yml"]) {
       ).with.service_account,
       /^identifier-q-ci-build@/,
     );
+    const diagnosticInput =
+      document.on.workflow_dispatch.inputs.diagnostics_only;
+    assert.equal(diagnosticInput.type, "boolean");
+    assert.equal(diagnosticInput.required, true);
+    assert.equal(diagnosticInput.default, true, "Default to a read-only retry");
+    const steps = document.jobs["cloud-build"].steps;
+    const auth = steps.findIndex((s) => s.id === "google_auth");
+    const sdk = steps.findIndex((s) =>
+      s.uses?.startsWith("google-github-actions/setup-gcloud@"),
+    );
+    const diagnostic = steps.findIndex(
+      (s) =>
+        s.run ===
+        "python3 deploy/cloudrun/automation/manage.py diagnose-auth --ci",
+    );
+    const submit = steps.findIndex((s) => s.id === "build");
+    assert(auth >= 0 && auth < sdk && sdk < diagnostic && diagnostic < submit);
+    assert.equal(
+      steps[diagnostic].if,
+      "${{ !cancelled() && steps.google_auth.outcome == 'success' }}",
+    );
+    assert.equal(
+      steps[submit].if,
+      "${{ toJSON(inputs.diagnostics_only) == 'false' }}",
+      "Only explicit boolean false permits submission; missing input fails closed",
+    );
+    assert.equal(
+      steps[submit].run,
+      "python3 deploy/cloudrun/automation/manage.py build --ci --approve-trial-build",
+    );
+    assert(
+      !steps.some((s) => s["continue-on-error"]),
+      "Authentication diagnostics must fail closed",
+    );
+    assert.equal(
+      document.env.AUTOMATION_ENABLED,
+      "${{ vars.IDENTIFIERQ_BUILD_ENABLED }}",
+    );
   } else {
     assert(
       document.jobs.deploy.if.includes(

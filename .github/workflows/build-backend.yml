@@ -3,6 +3,11 @@ name: Build Identifier Q backend (manual, no deployment)
 on:
   workflow_dispatch:
     inputs:
+      diagnostics_only:
+        description: Read-only authentication check; skip Cloud Build submission
+        required: true
+        type: boolean
+        default: true
       trial_confirmed:
         description: Confirm unupgraded GCP Free Trial, sufficient credit/days and Gemini Free Tier
         required: true
@@ -76,6 +81,7 @@ jobs:
       - name: Recheck source before requesting a Google token
         run: python3 deploy/cloudrun/automation/manage.py guard --purpose build --ci
       - name: Authenticate through build-only Workload Identity Federation
+        id: google_auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: projects/334840153796/locations/global/workloadIdentityPools/identifierq-github/providers/github-build
@@ -83,9 +89,13 @@ jobs:
           project_id: feint-identifierq
           create_credentials_file: true
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      - name: Diagnose gcloud token refresh and project access (read-only)
+        if: ${{ !cancelled() && steps.google_auth.outcome == 'success' }}
+        run: python3 deploy/cloudrun/automation/manage.py diagnose-auth --ci
       - name: Submit one build, wait for its outcome and capture immutable digest
+        if: ${{ toJSON(inputs.diagnostics_only) == 'false' }}
         id: build
         run: python3 deploy/cloudrun/automation/manage.py build --ci --approve-trial-build
       - name: Explain failure boundary
         if: failure()
-        run: echo 'Build failed or authentication/setup is incomplete. Inspect this run and any recorded Cloud Build ID before retrying. No Cloud Run deployment or Pages publication is part of this workflow.'
+        run: echo 'Authentication/setup or build failed. A credentials file alone does not prove authentication. Inspect the auth-diagnostic summary when available and the failed action otherwise. No Cloud Run deployment or Pages publication is part of this workflow.'

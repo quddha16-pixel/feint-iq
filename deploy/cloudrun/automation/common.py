@@ -51,6 +51,84 @@ class PermissionDenied(Failure):
     pass
 
 
+def cloud_error_details(stderr):
+    """Extract fixed indicators only. SDK error bodies may contain credentials.
+
+    These are reported failure phases, not a claim that live IAM was inspected.
+    Credential refresh happens lazily inside otherwise read-only API commands.
+    """
+    text = stderr.upper()
+    permissions = [
+        value
+        for value in (
+            "iam.serviceAccounts.getAccessToken",
+            "resourcemanager.projects.get",
+            "serviceusage.services.use",
+        )
+        if value.upper() in text
+    ]
+    reasons = [
+        value
+        for value in (
+            "IAM_PERMISSION_DENIED",
+            "SERVICE_DISABLED",
+            "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+            "SECURITY_POLICY_VIOLATED",
+            "VPC_SERVICE_CONTROLS",
+            "ORG_RESTRICTION_VIOLATION",
+            "USER_PROJECT_DENIED",
+            "BILLING_DISABLED",
+        )
+        if re.search(r"(?<![A-Z0-9_])" + value + r"(?![A-Z0-9_])", text)
+    ]
+    if any(
+        value in text
+        for value in (
+            "IAM.SERVICEACCOUNTS.GETACCESSTOKEN",
+            "IAMCREDENTIALS.GOOGLEAPIS.COM",
+            "UNABLE TO ACQUIRE IMPERSONATED CREDENTIALS",
+        )
+    ):
+        phase = "service_account_impersonation"
+    elif any(
+        value in text
+        for value in (
+            "STS.GOOGLEAPIS.COM",
+            "UNAUTHORIZED_CLIENT",
+            "REJECTED BY THE ATTRIBUTE CONDITION",
+        )
+    ):
+        phase = "sts_exchange"
+    elif any(
+        value in text
+        for value in (
+            "UNABLE TO RETRIEVE THE SUBJECT TOKEN",
+            "ACTIONS_ID_TOKEN_REQUEST",
+        )
+    ):
+        phase = "github_oidc_retrieval"
+    else:
+        phase = "unresolved"
+    # Authentication/refresh evidence takes precedence over a nested 403.
+    if phase != "unresolved" or any(
+        value in text
+        for value in ("UNAUTHENTICATED", "INVALID_GRANT", "REFRESHING", "CREDENTIAL")
+    ):
+        kind = "authentication_or_refresh_failed"
+    elif reasons:
+        kind = "api_or_policy_rejected"
+    elif "PERMISSION" in text or "403" in text:
+        kind = "permission_denied"
+    else:
+        kind = "sdk_or_network_failure"
+    return {
+        "reported_phase": phase,
+        "kind": kind,
+        "reported_permissions": permissions,
+        "reported_reasons": reasons,
+    }
+
+
 class BucketIamBindingError(Failure):
     """A bucket-policy write failed; its 404 alone does not identify a missing bucket."""
 
@@ -88,6 +166,21 @@ class Cloud:
             # SDK errors can include credential/debug content: classify without logging it.
             text = p.stderr.upper()
             label = " ".join(args[:4])
+            if args[:2] == ("projects", "describe"):
+                details = cloud_error_details(p.stderr)
+                error = (
+                    PermissionDenied
+                    if details["kind"]
+                    in ("permission_denied", "api_or_policy_rejected")
+                    else Failure
+                )
+                raise error(
+                    "Project lookup failed; authentication is not established merely "
+                    "by a created credentials file. Safe SDK indicators: "
+                    + json.dumps(details, sort_keys=True)
+                    + ". Run the guarded diagnose-auth CI check to separate token "
+                    "refresh from project access. No automatic IAM repair was attempted."
+                )
             if args[:3] == ("storage", "buckets", "add-iam-policy-binding"):
                 role = next(
                     (a[7:] for a in args if a.startswith("--role=")), "unspecified"

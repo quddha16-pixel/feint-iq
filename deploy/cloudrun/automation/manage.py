@@ -6,6 +6,7 @@ import json
 import os
 import sys
 
+from auth_diagnostics import diagnose_auth
 from build import build
 from common import (
     PROJECT,
@@ -30,6 +31,11 @@ def main():
     check = sub.add_parser("guard")
     check.add_argument("--purpose", choices=("build", "deploy"), required=True)
     check.add_argument("--ci", action="store_true")
+    diagnostic = sub.add_parser(
+        "diagnose-auth",
+        help="Guarded CI-only token refresh/project lookup; no build or IAM changes",
+    )
+    diagnostic.add_argument("--ci", action="store_true", required=True)
     sub.add_parser(
         "verify-bucket",
         help="Read-only project/owner/access verification; no IAM, build or deployment actions",
@@ -79,6 +85,8 @@ def main():
             print(
                 f"Approved source/configuration verified: {commit}. No cloud command executed."
             )
+        elif args.command == "diagnose-auth":
+            diagnose_auth()
         elif args.command == "verify-wif":
             verify_build_trust(Cloud())
         elif args.command == "repair-wif":
