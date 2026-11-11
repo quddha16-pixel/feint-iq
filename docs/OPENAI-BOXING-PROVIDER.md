@@ -1,8 +1,12 @@
 # OpenAI short-clip boxing provider
 
-Development branch: feature/openai-boxing-provider, based on the local private
+Original provider branch: feature/openai-boxing-provider, based on the local private
 camp rebuild (0237067). No deployment, billing change, resource creation,
 credential creation, or real provider invocation was performed for this change.
+
+For the integrated release, current pricing, the $5 guard and exact Google Cloud
+configuration, use [PRIVATE-CAMP-OPENAI-DEPLOYMENT.md](PRIVATE-CAMP-OPENAI-DEPLOYMENT.md).
+The integration preserves this provider and adds optional OPENAI_MAX_REQUEST_USD.
 
 ## Model choice
 
@@ -203,10 +207,12 @@ standard Astra list rates, let I=input, C=cachedInput, W=cacheWrites,
 W30=cacheWrites30m, W12=cacheWrites12h, and O=output:
 
 ```
-estimated USD = ((I-C-W)*10 + C*1 + W30*12.5 + W12*25 + O*50) / 1,000,000
+up to 272K input: ((I-C-W)*10 + C*1 + W30*12.5 + W12*25 + O*50) / 1,000,000
+above 272K input: ((I-C-W)*20 + C*2 + W30*25 + W12*50 + O*75) / 1,000,000
 ```
 
-The code computes this only for the exact known model/standard tier and valid
+The threshold selects the rates for the entire request. The code computes this
+only for the exact known model/standard tier and valid
 counter details. Missing cache details, different model IDs, nonstandard tiers
 or inconsistent totals produce a null estimate. For a different model, use its
 current published rates and the same measured counters; never reuse Astra rates.

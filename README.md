@@ -62,3 +62,11 @@ npm run test:e2e -- --timeout=90000
 Tests generate black codec fixtures and explicitly synthetic findings. They
 validate workflow and transport behavior, not AI accuracy. Every real coaching
 claim still requires human-reviewed footage and trustworthy source evidence.
+
+## Integrated development release
+
+The existing camp redesign and OpenAI provider are integrated on
+`develop/private-camp-openai-integration`, preserving commits `0237067` and
+`53062f5`. See [exact Cloud Run/Secret Manager configuration and the $5 first-test
+procedure](docs/PRIVATE-CAMP-OPENAI-DEPLOYMENT.md). No deployment or paid request
+has been performed. The first approved test uses the existing 25 MiB pipeline.

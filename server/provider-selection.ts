@@ -37,6 +37,9 @@ export function selectProvider(
     maxOutputTokens: env.OPENAI_MAX_OUTPUT_TOKENS
       ? Number(env.OPENAI_MAX_OUTPUT_TOKENS)
       : undefined,
+    maxRequestUsd: env.OPENAI_MAX_REQUEST_USD
+      ? Number(env.OPENAI_MAX_REQUEST_USD)
+      : undefined,
     request,
   });
 }

@@ -13,6 +13,7 @@ import {
 import {
   measuredUsage,
   priceUsage,
+  maximumGenerationCost,
   type ProviderUsage,
 } from "./provider-usage";
 export const DEFAULT_OPENAI_MODEL = "gpt-6-astra";
@@ -50,6 +51,7 @@ interface OpenAIOptions {
   model?: string;
   reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
   maxOutputTokens?: number;
+  maxRequestUsd?: number;
   timeoutMs?: number;
   request?: typeof fetch;
 }
@@ -95,6 +97,13 @@ export class OpenAIProvider implements VideoAnalysisProvider {
     if (!Number.isInteger(max) || max < 1024 || max > 32768)
       throw new Error(
         "OPENAI_MAX_OUTPUT_TOKENS must be between 1024 and 32768.",
+      );
+    if (
+      options.maxRequestUsd !== undefined &&
+      (!Number.isFinite(options.maxRequestUsd) || options.maxRequestUsd <= 0)
+    )
+      throw new Error(
+        "OPENAI_MAX_REQUEST_USD must be a positive dollar amount.",
       );
     if (
       options.reasoningEffort &&
@@ -166,7 +175,7 @@ export class OpenAIProvider implements VideoAnalysisProvider {
           detail: "high",
         },
       );
-    const body = JSON.stringify({
+    const payload = {
       model: this.model,
       instructions: BOXING_INSTRUCTIONS,
       input: [{ role: "user", content }],
@@ -188,7 +197,8 @@ export class OpenAIProvider implements VideoAnalysisProvider {
       ...(this.model.startsWith("gpt-6")
         ? { prompt_cache_options: { mode: "explicit" } }
         : {}),
-    });
+    };
+    const body = JSON.stringify(payload);
     if (Buffer.byteLength(body) > 19 * 1024 * 1024)
       throw new Error(
         "Sampled images exceed the request limit. No OpenAI request was sent.",
@@ -215,6 +225,78 @@ export class OpenAIProvider implements VideoAnalysisProvider {
       pricing: null,
     };
     try {
+      if (this.options.maxRequestUsd !== undefined) {
+        receipt.status = "preflight-failed";
+        if (
+          maximumGenerationCost(this.model, 0, payload.max_output_tokens) ===
+          null
+        )
+          throw new Error(
+            "No verified budget pricing for OPENAI_MODEL. No generation request was sent.",
+          );
+        const counted = await this.request(
+          "https://api.openai.com/v1/responses/input_tokens",
+          {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${this.key}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              model: payload.model,
+              instructions: payload.instructions,
+              input: payload.input,
+              reasoning: payload.reasoning,
+              text: payload.text,
+              tools: payload.tools,
+            }),
+            signal: combined,
+            redirect: "error",
+          },
+        ).catch(() => {
+          throw new Error(
+            "OpenAI token preflight could not be completed. No generation request was sent.",
+          );
+        });
+        if (!counted.ok) {
+          await counted.body?.cancel().catch(() => undefined);
+          throw new Error(
+            `OpenAI token preflight failed (HTTP ${counted.status}). No generation request was sent.`,
+          );
+        }
+        let count: number;
+        try {
+          count = z
+            .object({
+              object: z.literal("response.input_tokens"),
+              input_tokens: z.number().int().nonnegative().max(922000),
+            })
+            .parse(await readBounded(counted)).input_tokens;
+        } catch {
+          throw new Error(
+            "OpenAI token preflight was invalid. No generation request was sent.",
+          );
+        }
+        const cost = maximumGenerationCost(
+          this.model,
+          count,
+          payload.max_output_tokens,
+        )!;
+        receipt.preflight = {
+          inputTokens: count,
+          maxOutputTokens: payload.max_output_tokens,
+          worstCaseCostUsd: cost,
+          limitUsd: this.options.maxRequestUsd,
+        };
+        if (cost > this.options.maxRequestUsd) {
+          receipt.status = "budget-rejected";
+          throw new Error(
+            "OpenAI request exceeds the configured API test budget. No generation request was sent.",
+          );
+        }
+        combined.throwIfAborted();
+      }
+      receipt.status = "network-error";
       const response = await this.request(
         "https://api.openai.com/v1/responses",
         {

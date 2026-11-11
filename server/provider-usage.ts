@@ -23,6 +23,12 @@ export interface ProviderUsage {
   responseId: string | null;
   serviceTier: string | null;
   status: string;
+  preflight?: {
+    inputTokens: number;
+    maxOutputTokens: number;
+    worstCaseCostUsd: number;
+    limitUsd: number;
+  };
   tokens: {
     input: number;
     cachedInput: number | null;
@@ -42,18 +48,58 @@ export interface ProviderUsage {
     outputPerMillion: number;
     cacheWrite30mPerMillion: number;
     cacheWrite12hPerMillion: number;
+    context: "short" | "long";
+    longContextThreshold: number;
   } | null;
 }
 // Standard public list prices, NOT an invoice. Other models/tiers stay unknown.
 const ASTRA_PRICING = {
   source: "https://developers.openai.com/api/docs/models/gpt-6-astra",
-  checked: "2026-11-10",
+  checked: "2026-11-11",
   inputPerMillion: 10,
   cachedInputPerMillion: 1,
   outputPerMillion: 50,
   cacheWrite30mPerMillion: 12.5,
   cacheWrite12hPerMillion: 25,
+  context: "short" as "short" | "long",
+  longContextThreshold: 272000,
 };
+export function astraPricing(
+  inputTokens: number,
+): NonNullable<ProviderUsage["pricing"]> {
+  if (inputTokens <= ASTRA_PRICING.longContextThreshold)
+    return { ...ASTRA_PRICING };
+  return {
+    ...ASTRA_PRICING,
+    context: "long",
+    inputPerMillion: 20,
+    cachedInputPerMillion: 2,
+    outputPerMillion: 75,
+    cacheWrite30mPerMillion: 25,
+    cacheWrite12hPerMillion: 50,
+  };
+}
+/** Conservative uncached input + the FULL output cap (including reasoning).
+ * Used only with standard tier and caching explicitly disabled for this model. */
+export function maximumGenerationCost(
+  model: string,
+  inputTokens: number,
+  maxOutputTokens: number,
+): number | null {
+  if (
+    model !== "gpt-6-astra" ||
+    !Number.isSafeInteger(inputTokens) ||
+    inputTokens < 0 ||
+    !Number.isSafeInteger(maxOutputTokens) ||
+    maxOutputTokens < 1
+  )
+    return null;
+  const p = astraPricing(inputTokens);
+  return (
+    (inputTokens * p.inputPerMillion + maxOutputTokens * p.outputPerMillion) /
+    1_000_000
+  );
+}
 export function measuredUsage(value: unknown): ProviderUsage["tokens"] {
   const parsed = usageSchema.safeParse(value);
   if (!parsed.success) return null;
@@ -99,7 +145,7 @@ export function priceUsage(
   )
     return { estimatedCostUsd: null, pricing: null };
   const ordinary = t.input - t.cachedInput - t.cacheWrites;
-  const p = ASTRA_PRICING;
+  const p = astraPricing(t.input);
   const cost =
     (ordinary * p.inputPerMillion +
       t.cachedInput * p.cachedInputPerMillion +
