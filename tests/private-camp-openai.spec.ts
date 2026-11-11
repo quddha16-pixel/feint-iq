@@ -83,6 +83,9 @@ test("private camp records survive actual decoding and OpenAI-shaped NDJSON anal
     await page.getByRole("button", { name: "Continue", exact: true }).click();
     await page.getByRole("button", { name: "Continue", exact: true }).click();
     await page
+      .getByLabel("Find moments and basic defensive coaching")
+      .uncheck();
+    await page
       .getByRole("button", { name: "Generate performance analysis" })
       .click();
     await expect(

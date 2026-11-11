@@ -21,6 +21,7 @@ export const draftSchema = z.object({
   type: z.enum(["complete", "technical", "offensive", "defensive"]),
   ruleset: z.enum(["k1", "low-kick", "full-contact", "custom"]),
   rulesetNotes: z.string().max(2000),
+  momentReview: z.boolean().optional(),
 });
 export type SavedDraft = z.infer<typeof draftSchema>;
 export const emptyDraft = (

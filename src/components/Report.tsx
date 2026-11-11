@@ -8,6 +8,8 @@ import { rulesetLabels } from "../domain/metrics";
 import { formatTime, safeSeek, validateVideoFile } from "../domain/video";
 import { downloadJSON } from "../services/storage";
 import { EmptyState, Notice, PageHeading } from "./ui";
+import { MomentReview } from "./report/MomentReview";
+import type { MomentFeedback } from "../services/momentFeedback";
 import {
   PerformanceOverview,
   TechnicalBreakdown,
@@ -15,14 +17,17 @@ import {
 } from "./report/ReportSections";
 export function Report({
   report,
+  onMomentFeedback,
 }: {
   report: CompletedAnalysisReport | undefined;
+  onMomentFeedback?: (id: string, edit: MomentFeedback) => string | undefined;
 }) {
   const [source, setSource] = useState("");
   const [error, setError] = useState("");
   const [active, setActive] = useState("");
   const [tab, setTab] = useState("overview");
   const player = useRef<HTMLVideoElement>(null);
+  const segmentEnd = useRef<number | null>(null);
   useEffect(
     () => () => {
       if (source) URL.revokeObjectURL(source);
@@ -69,6 +74,7 @@ export function Report({
     );
   const r = parsed.data;
   const seek = (time: number, id: string) => {
+    segmentEnd.current = null;
     const problem = safeSeek(player.current, time);
     if (problem) setError(problem);
     else {
@@ -89,7 +95,9 @@ export function Report({
         <ArrowLeft size={16} /> Back to library
       </a>
       <PageHeading
-        eyebrow="PERFORMANCE REPORT"
+        eyebrow={
+          r.momentAnalysis ? "MOMENT REVIEW · v0.1" : "PERFORMANCE REPORT"
+        }
         title={r.configuration.fighter.name}
         action={
           <button
@@ -104,8 +112,10 @@ export function Report({
         {r.configuration.ruleset
           ? `${rulesetLabels[r.configuration.ruleset]} · `
           : ""}
-        {new Date(r.completedAt).toLocaleDateString()} · {r.configuration.type}{" "}
-        analysis
+        {new Date(r.completedAt).toLocaleDateString()} ·{" "}
+        {r.momentAnalysis
+          ? "selected-moment coaching"
+          : `${r.configuration.type} analysis`}
       </PageHeading>
       <div className="report-layout">
         <aside className="report-video panel">
@@ -120,6 +130,15 @@ export function Report({
               controls
               playsInline
               aria-label="Report footage"
+              onTimeUpdate={(e) => {
+                if (
+                  segmentEnd.current !== null &&
+                  e.currentTarget.currentTime >= segmentEnd.current
+                ) {
+                  e.currentTarget.pause();
+                  segmentEnd.current = null;
+                }
+              }}
               onLoadedMetadata={(e) => {
                 if (Math.abs(e.currentTarget.duration - r.video.duration) > 1) {
                   setError(
@@ -173,40 +192,47 @@ export function Report({
             checks, not a cryptographic identity guarantee.
           </p>
           {error && <Notice tone="error">{error}</Notice>}
-          <div className="timeline">
-            <h3>Verified event timeline</h3>
-            {r.evidence.some((e) => e.verifiedTime !== null) ? (
-              [...r.evidence]
-                .filter((e) => e.verifiedTime !== null)
-                .sort((a, b) => a.verifiedTime! - b.verifiedTime!)
-                .map((e) => (
-                  <button
-                    className="timeline-event"
-                    key={e.id}
-                    onClick={() => {
-                      setTab("technical");
-                      seek(
-                        e.verifiedTime!,
-                        r.observations.find((o) => o.evidenceIds.includes(e.id))
-                          ?.id ?? "",
-                      );
-                    }}
-                  >
-                    <span>{formatTime(e.verifiedTime!)}</span>
-                    <span>{e.description}</span>
-                    <Play size={13} />
-                  </button>
-                ))
-            ) : (
-              <p className="muted">
-                No verified timestamped events were supplied.
-              </p>
-            )}
-          </div>
+          {!r.momentAnalysis && (
+            <div className="timeline">
+              <h3>Verified event timeline</h3>
+              {r.evidence.some((e) => e.verifiedTime !== null) ? (
+                [...r.evidence]
+                  .filter((e) => e.verifiedTime !== null)
+                  .sort((a, b) => a.verifiedTime! - b.verifiedTime!)
+                  .map((e) => (
+                    <button
+                      className="timeline-event"
+                      key={e.id}
+                      onClick={() => {
+                        setTab("technical");
+                        seek(
+                          e.verifiedTime!,
+                          r.observations.find((o) =>
+                            o.evidenceIds.includes(e.id),
+                          )?.id ?? "",
+                        );
+                      }}
+                    >
+                      <span>{formatTime(e.verifiedTime!)}</span>
+                      <span>{e.description}</span>
+                      <Play size={13} />
+                    </button>
+                  ))
+              ) : (
+                <p className="muted">
+                  No verified timestamped events were supplied.
+                </p>
+              )}
+            </div>
+          )}
           <div className="report-provenance">
             <small>ENGINE</small>
             <p>{r.engineVersion}</p>
-            <small>SCORING METHODOLOGY</small>
+            <small>
+              {r.momentAnalysis
+                ? "ANALYSIS METHODOLOGY"
+                : "SCORING METHODOLOGY"}
+            </small>
             <p>{r.methodology.version}</p>
             <details>
               <summary>Methodology & conditions</summary>
@@ -216,57 +242,88 @@ export function Report({
           </div>
         </aside>
         <div className="report-content">
-          <div
-            className="report-tabs"
-            role="tablist"
-            aria-label="Report sections"
-          >
-            {[
-              ["overview", "Overview"],
-              ["technical", "Technical breakdown"],
-              ["development", "Improvement"],
-            ].map(([id, label]) => (
-              <button
-                role="tab"
-                id={`tab-${id}`}
-                aria-controls={`panel-${id}`}
-                aria-selected={tab === id}
-                tabIndex={tab === id ? 0 : -1}
-                key={id}
-                onClick={() => setTab(id)}
-                onKeyDown={(e) => {
-                  if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-                    e.preventDefault();
-                    const tabs = ["overview", "technical", "development"];
-                    const next =
-                      tabs[
-                        (tabs.indexOf(tab) + (e.key === "ArrowRight" ? 1 : 2)) %
-                          3
-                      ];
-                    setTab(next);
-                    document.getElementById(`tab-${next}`)?.focus();
-                  }
-                }}
+          {r.momentAnalysis && (
+            <MomentReview
+              report={r}
+              canPlay={!!source}
+              save={(edit) =>
+                onMomentFeedback
+                  ? onMomentFeedback(r.id, edit)
+                  : "Coach review saving is unavailable."
+              }
+              play={(start, end) => {
+                const problem = safeSeek(player.current, start);
+                if (problem) {
+                  setError(problem);
+                  return;
+                }
+                setError("");
+                segmentEnd.current = end;
+                player.current?.scrollIntoView({ block: "nearest" });
+                void player.current
+                  ?.play()
+                  .catch(() =>
+                    setError("Use the video controls to start playback."),
+                  );
+              }}
+            />
+          )}
+          {!r.momentAnalysis && (
+            <>
+              <div
+                className="report-tabs"
+                role="tablist"
+                aria-label="Report sections"
               >
-                {label}
-              </button>
-            ))}
-          </div>
-          <div
-            role="tabpanel"
-            id={`panel-${tab}`}
-            aria-labelledby={`tab-${tab}`}
-          >
-            {tab === "overview" && (
-              <PerformanceOverview report={r} onFinding={openFinding} />
-            )}
-            {tab === "technical" && (
-              <TechnicalBreakdown report={r} active={active} seek={seek} />
-            )}
-            {tab === "development" && (
-              <DevelopmentPlan report={r} onFinding={openFinding} />
-            )}
-          </div>
+                {[
+                  ["overview", "Overview"],
+                  ["technical", "Technical breakdown"],
+                  ["development", "Improvement"],
+                ].map(([id, label]) => (
+                  <button
+                    role="tab"
+                    id={`tab-${id}`}
+                    aria-controls={`panel-${id}`}
+                    aria-selected={tab === id}
+                    tabIndex={tab === id ? 0 : -1}
+                    key={id}
+                    onClick={() => setTab(id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+                        e.preventDefault();
+                        const tabs = ["overview", "technical", "development"];
+                        const next =
+                          tabs[
+                            (tabs.indexOf(tab) +
+                              (e.key === "ArrowRight" ? 1 : 2)) %
+                              3
+                          ];
+                        setTab(next);
+                        document.getElementById(`tab-${next}`)?.focus();
+                      }
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div
+                role="tabpanel"
+                id={`panel-${tab}`}
+                aria-labelledby={`tab-${tab}`}
+              >
+                {tab === "overview" && (
+                  <PerformanceOverview report={r} onFinding={openFinding} />
+                )}
+                {tab === "technical" && (
+                  <TechnicalBreakdown report={r} active={active} seek={seek} />
+                )}
+                {tab === "development" && (
+                  <DevelopmentPlan report={r} onFinding={openFinding} />
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </>

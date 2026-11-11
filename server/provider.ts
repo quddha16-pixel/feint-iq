@@ -7,6 +7,7 @@ import {
 } from "../src/domain/contracts";
 import type { ProviderUsage } from "./provider-usage";
 import type { PreparedVideo } from "./media";
+import { momentAssessmentSchema } from "../src/domain/moments";
 export const findingSchema = z
   .object({
     metricId: z.enum([
@@ -48,6 +49,7 @@ export const providerResultSchema = z
     identityExplanation: z.string().min(1).max(2000),
     summary: z.string().min(1).max(5000),
     observations: z.array(findingSchema).max(12),
+    momentAssessments: z.array(momentAssessmentSchema).min(1).max(6).optional(),
     styleComparisons: z
       .array(
         z
@@ -69,6 +71,7 @@ export type ProviderResult = z.infer<typeof providerResultSchema>;
 export interface VideoAnalysisProvider {
   name: string;
   model: string;
+  supportsMoments?: boolean;
   analyze(
     video: PreparedVideo,
     configuration: AnalysisConfiguration,

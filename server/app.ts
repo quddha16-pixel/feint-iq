@@ -19,6 +19,7 @@ import { prepareVideo, type PreparedVideo } from "./media";
 import type { VideoAnalysisProvider } from "./provider";
 import { buildReport } from "./report";
 import type { ProviderUsage } from "./provider-usage";
+import { momentOptionsSchema, type MomentOptions } from "./moments";
 interface Options {
   accessToken: string;
   origin: string;
@@ -28,6 +29,7 @@ interface Options {
   timeoutMs?: number;
   maxUploadBytes?: number;
   onProviderUsage?: (usage: ProviderUsage, jobId: string) => void;
+  momentOptions?: MomentOptions;
 }
 interface StoredJob {
   job: AnalysisJob;
@@ -37,6 +39,7 @@ interface StoredJob {
   usage?: ProviderUsage;
 }
 export async function createBackend(options: Options) {
+  const momentOptions = momentOptionsSchema.parse(options.momentOptions ?? {});
   if (options.accessToken.length < 32)
     throw new Error(
       "ANALYSIS_ACCESS_TOKEN must contain at least 32 characters and stay server-side except for the authorized pilot user’s session access.",
@@ -144,6 +147,7 @@ export async function createBackend(options: Options) {
     model: options.provider?.model ?? "Not configured",
     tracking: false,
     qualitativeOnly: true,
+    momentDetection: options.provider?.supportsMoments === true,
     limits: {
       maxBytes: maxUploadBytes,
       minSeconds: PILOT_LIMITS.minSeconds,
@@ -209,6 +213,13 @@ export async function createBackend(options: Options) {
           message:
             "The live pilot currently supports boxing only. Kickboxing setup and saved reports remain available.",
         });
+      if (c.data.momentReview && !options.provider.supportsMoments)
+        return reply
+          .code(422)
+          .send({
+            message:
+              "Moment review requires the configured OpenAI adapter. The legacy provider path remains available.",
+          });
       if (
         !c.data.fighter.subjectId ||
         !(c.data.fighter.confirmationFrames?.length || c.data.fighter.frame)
@@ -313,7 +324,7 @@ export async function createBackend(options: Options) {
           update("decoding");
           const prepared: PreparedVideo = await (
             options.prepare ?? prepareVideo
-          )(path, retainedDirectory, c.data, abort.signal);
+          )(path, retainedDirectory, c.data, abort.signal, momentOptions);
           if (Math.abs(prepared.duration - v.data.duration) > 1)
             throw new Error(
               "Decoded duration differs from selected footage metadata. Choose the original video again.",

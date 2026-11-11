@@ -9,6 +9,14 @@ const app = await createBackend({
   accessToken,
   origin,
   provider,
+  momentOptions: {
+    maxMoments: process.env.MOMENT_MAX_COUNT
+      ? Number(process.env.MOMENT_MAX_COUNT)
+      : undefined,
+    threshold: process.env.MOMENT_MOTION_THRESHOLD
+      ? Number(process.env.MOMENT_MOTION_THRESHOLD)
+      : undefined,
+  },
   // Operational counts only: never log images, prompts, athlete metadata, keys or raw responses.
   onProviderUsage: (usage, jobId) =>
     console.log(

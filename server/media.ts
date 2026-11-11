@@ -3,16 +3,28 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PILOT_LIMITS } from "../src/domain/engine";
 import type { AnalysisConfiguration } from "../src/domain/contracts";
+import type { SelectedMoment } from "../src/domain/moments";
+import type { z } from "zod";
+import type { momentAnalysisSchema } from "../src/domain/moments";
+import {
+  scanMotion,
+  selectMoments,
+  momentOptionsSchema,
+  type MomentOptions,
+} from "./moments";
 export interface SampledFrame {
   id: string;
   time: number;
   mime: "image/jpeg";
   data: string;
   identityReference?: { x: number; y: number; note?: string };
+  momentId?: string;
 }
 export interface PreparedVideo {
   duration: number;
   frames: SampledFrame[];
+  moments?: SelectedMoment[];
+  scan?: z.infer<typeof momentAnalysisSchema>["scan"];
 }
 export async function run(
   command: string,
@@ -55,6 +67,7 @@ export async function prepareVideo(
   directory: string,
   configuration: AnalysisConfiguration,
   signal?: AbortSignal,
+  momentOptions: MomentOptions = {},
 ): Promise<PreparedVideo> {
   const metadata = JSON.parse(
     await run(
@@ -106,7 +119,50 @@ export async function prepareVideo(
   const interval = Math.max(1 / PILOT_LIMITS.fps, duration / 120);
   const count = Math.min(120, Math.ceil(duration / interval));
   // One decode process for the sequence. showinfo's stderr PTS is captured separately below.
-  await extractSequence(path, directory, count, interval, frames, signal);
+  let moments: SelectedMoment[] | undefined;
+  let scan: PreparedVideo["scan"];
+  if (configuration.momentReview) {
+    const settings = momentOptionsSchema.parse(momentOptions);
+    const scanned = await scanMotion(path, signal);
+    moments = selectMoments(scanned.samples, duration, settings);
+    const ranges = moments
+      .map((m) => `between(t,${m.start},${m.end})`)
+      .join("+");
+    await extractSequence(
+      path,
+      directory,
+      120,
+      1 / 6,
+      frames,
+      signal,
+      `(${ranges})`,
+      960,
+    );
+    for (const m of moments) {
+      const selected = frames.filter(
+        (f) => f.time >= m.start && f.time <= m.end,
+      );
+      m.frameIds = selected.map((f) => f.id);
+      if (
+        selected.length < 3 ||
+        !selected.some((f) => f.time < m.anchor) ||
+        !selected.some((f) => f.time > m.anchor)
+      )
+        throw new Error(
+          "Not enough before/after frames in a selected moment. No provider request was sent.",
+        );
+      for (const frame of selected) frame.momentId = m.id;
+    }
+    scan = {
+      fps: 6,
+      frames: scanned.samples.length,
+      elapsedMs: scanned.elapsedMs,
+      threshold: settings.threshold,
+      maxMoments: settings.maxMoments,
+      fallbackUsed: moments[0].selection === "fallback",
+    };
+  } else
+    await extractSequence(path, directory, count, interval, frames, signal);
   for (let i = 0; i < references.length; i++) {
     const reference = references[i];
     const output = join(directory, `identity-${i}.jpg`);
@@ -149,7 +205,7 @@ export async function prepareVideo(
       },
     });
   }
-  return { duration, frames };
+  return { duration, frames, ...(moments ? { moments, scan } : {}) };
 }
 async function extractSequence(
   path: string,
@@ -158,6 +214,8 @@ async function extractSequence(
   interval: number,
   frames: SampledFrame[],
   signal?: AbortSignal,
+  ranges?: string,
+  maxSide = 640,
 ) {
   const output = join(directory, "frame-%03d.jpg");
   const pts = await new Promise<number[]>((resolve, reject) => {
@@ -175,7 +233,7 @@ async function extractSequence(
         path,
         "-an",
         "-vf",
-        `select='isnan(prev_selected_t)+gte(t-prev_selected_t,${interval})',scale=640:640:force_original_aspect_ratio=decrease,showinfo`,
+        `select='${ranges ? ranges + "*" : ""}(isnan(prev_selected_t)+gte(t-prev_selected_t,${interval}))',scale=${maxSide}:${maxSide}:force_original_aspect_ratio=decrease,showinfo`,
         "-fps_mode",
         "vfr",
         "-frames:v",

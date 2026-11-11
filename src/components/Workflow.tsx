@@ -52,6 +52,7 @@ interface Props {
   frames: NonNullable<FighterIdentification["confirmationFrames"]>;
   onRemoveFrame: (index: number) => void;
   engineAvailable: boolean;
+  momentDetection?: boolean;
   onCancel: () => void;
   onFrame: (f: FighterIdentification["frame"]) => void;
   status: AnalysisStatus;
@@ -478,6 +479,26 @@ export function Workflow(p: Props) {
                     </div>
                   </dl>
                 </div>
+                {p.momentDetection && d.discipline === "boxing" && (
+                  <label className="field">
+                    <span>
+                      <input
+                        type="checkbox"
+                        checked={d.momentReview !== false}
+                        onChange={(e) =>
+                          update({ momentReview: e.target.checked })
+                        }
+                      />{" "}
+                      Find moments and basic defensive coaching
+                    </span>
+                    <small>
+                      Searches short intervals using image changes. This does
+                      not recognize punches or guarantee that important
+                      exchanges are found. Uncheck to use the existing
+                      sparse-frame analysis.
+                    </small>
+                  </label>
+                )}
                 <Notice>
                   {p.engineAvailable
                     ? "Connected boxing pilot: generating sends this clip to your backend and sampled frames to its provider. Keep this tab open and your phone unlocked until the report arrives. Processing does not continue reliably after a disconnection. Source files are removed before a successful result; save or export the completed report in this browser. Only qualitative findings are returned. No continuous tracking, exact event timing, or scoring is claimed."

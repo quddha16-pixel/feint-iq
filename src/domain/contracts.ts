@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { referenceIds, referenceFor } from "./styles";
 import { analysisTypes, metricsFor, type Discipline } from "./metrics";
+import { momentReportSchema } from "./moments";
 const text = z.string().trim().min(1).max(10000);
 const id = z.string().min(1).max(200);
 const timestamp = z.number().finite().nonnegative();
@@ -31,6 +32,7 @@ export const configSchema = z
   .object({
     discipline: z.enum(["boxing", "kickboxing"]),
     type: z.enum(["complete", "technical", "offensive", "defensive"]),
+    momentReview: z.boolean().optional(),
     ruleset: z.enum(["k1", "low-kick", "full-contact", "custom"]).optional(),
     rulesetNotes: z.string().max(2000),
     fighter: fighterSchema,
@@ -167,6 +169,7 @@ const reportBase = z.object({
   observations: z.array(observationSchema),
   recommendations: z.array(recommendationSchema),
   styleComparisons: z.array(styleComparisonSchema).max(3).optional(),
+  momentAnalysis: momentReportSchema.optional(),
 });
 export const reportSchema = reportBase.superRefine((r, ctx) => {
   const fail = (message: string) => ctx.addIssue({ code: "custom", message });
@@ -202,6 +205,57 @@ export const reportSchema = reportBase.superRefine((r, ctx) => {
   const observations = new Set(r.observations.map((o) => o.id)),
     evidence = new Set(r.evidence.map((e) => e.id)),
     metricIds = new Set(definitions.map((m) => m.id));
+  if (r.momentAnalysis) {
+    const moments = r.momentAnalysis.moments;
+    if (new Set(moments.map((m) => m.candidate.id)).size !== moments.length)
+      fail("Duplicate moment IDs.");
+    if (
+      moments.length > r.momentAnalysis.scan.maxMoments ||
+      moments.some(
+        (m, i) =>
+          (m.candidate.selection === "fallback") !==
+            r.momentAnalysis!.scan.fallbackUsed ||
+          (i > 0 && m.candidate.start <= moments[i - 1].candidate.end),
+      )
+    )
+      fail("Moment coverage order is invalid.");
+    for (const { candidate: m, assessment: a } of moments) {
+      if (
+        m.end > r.video.duration ||
+        m.id !== a.momentId ||
+        a.frameIds.some((id) => !m.frameIds.includes(id)) ||
+        m.frameIds.some(
+          (id) =>
+            !r.evidence.some(
+              (e) =>
+                e.id === id &&
+                e.verifiedTime !== null &&
+                e.verifiedTime >= m.start &&
+                e.verifiedTime <= m.end,
+            ),
+        )
+      )
+        fail("Moment evidence must belong to this source interval.");
+      const sequence = m.frameIds.map((id) =>
+        r.evidence.find((e) => e.id === id),
+      );
+      if (
+        sequence.some(
+          (e, i) =>
+            !e ||
+            e.source !== "sampled-frame" ||
+            e.frameId !== e.id ||
+            (i > 0 &&
+              e.verifiedTime! <= (sequence[i - 1]?.verifiedTime ?? Infinity)),
+        ) ||
+        !sequence.some((e) => e && e.verifiedTime! < m.anchor) ||
+        !sequence.some((e) => e && e.verifiedTime! > m.anchor)
+      )
+        fail("Moment frames must preserve before/after source chronology.");
+    }
+    if (r.momentAnalysis.missed.some((m) => m.time >= r.video.duration))
+      fail("Missed moment is outside the clip.");
+  }
   for (const e of r.evidence)
     if (
       e.videoId !== r.video.id ||

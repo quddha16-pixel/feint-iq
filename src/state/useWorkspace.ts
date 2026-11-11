@@ -1,5 +1,9 @@
 import { AnalysisJobFailure } from "../services/analysisStream";
 import { stageLabels } from "../domain/transport";
+import {
+  applyMomentFeedback,
+  type MomentFeedback,
+} from "../services/momentFeedback";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   configSchema,
@@ -35,6 +39,7 @@ export function useWorkspace() {
     connected: boolean;
     available: boolean;
     message: string;
+    momentDetection?: boolean;
   }>({ connected: false, available: false, message: "Integration required" });
   const connectEngine = async (url: string, token: string) => {
     const result = await connectAnalysisService(url, token);
@@ -43,6 +48,7 @@ export function useWorkspace() {
       connected: true,
       available: result.health.available,
       message: result.health.message,
+      momentDetection: result.health.momentDetection === true,
     });
   };
   const disconnectEngine = () => {
@@ -250,6 +256,11 @@ export function useWorkspace() {
       type: draft.type,
       ruleset: draft.discipline === "kickboxing" ? draft.ruleset : undefined,
       rulesetNotes: draft.rulesetNotes,
+      ...(engine.momentDetection &&
+      draft.discipline === "boxing" &&
+      draft.momentReview !== false
+        ? { momentReview: true }
+        : {}),
       fighter: {
         name: draft.fighterName,
         method: draft.method,
@@ -419,6 +430,37 @@ export function useWorkspace() {
     if (problem) setMessage(problem);
     else setReports(next);
   };
+  const saveMomentFeedback = (
+    id: string,
+    edit: MomentFeedback,
+  ): string | undefined => {
+    try {
+      if (blocked.current.has(REPORTS_KEY))
+        throw new Error(
+          "Invalid saved library was preserved. Export it before recovery.",
+        );
+      const stored = readReports();
+      if (
+        stored.error ||
+        JSON.stringify(stored.value) !== JSON.stringify(reportsRef.current)
+      )
+        throw new Error(
+          "The report library changed or is not saved. Export current data and reload before reviewing.",
+        );
+      if (!reportsRef.current.some((r) => r.id === id))
+        throw new Error("Report is missing.");
+      const next = reportsRef.current.map((r) =>
+        r.id === id ? applyMomentFeedback(r, edit) : r,
+      );
+      const problem = saveReports(next);
+      if (problem) throw new Error(problem);
+      setReports(next);
+    } catch (error) {
+      return error instanceof Error
+        ? error.message
+        : "Coach review could not be saved.";
+    }
+  };
   const exportWorkspace = () => {
     try {
       downloadJSON(
@@ -493,6 +535,7 @@ export function useWorkspace() {
     setError,
     importData,
     deleteReport,
+    saveMomentFeedback,
     exportWorkspace,
     clearWorkspace,
     setMessage,

@@ -15,6 +15,7 @@ export const engineHealthSchema = z.object({
   model: z.string(),
   tracking: z.literal(false),
   qualitativeOnly: z.literal(true),
+  momentDetection: z.boolean().optional(),
   limits: z.object({
     maxBytes: z.number().positive(),
     minSeconds: z.number().positive(),

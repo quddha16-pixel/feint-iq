@@ -70,3 +70,12 @@ The existing camp redesign and OpenAI provider are integrated on
 `53062f5`. See [exact Cloud Run/Secret Manager configuration and the $5 first-test
 procedure](docs/PRIVATE-CAMP-OPENAI-DEPLOYMENT.md). No deployment or paid request
 has been performed. The first approved test uses the existing 25 MiB pipeline.
+
+## v0.1 moment finding and defensive coaching
+
+The OpenAI pilot can now select a few short motion-cue intervals, extract denser
+before/after evidence, and return basic defensive assessments for coach review.
+The review screen stores Correct/Incorrect/Uncertain evaluations, selection
+usefulness, coach notes and missed timestamps in exported reports. This is not
+reliable punch/contact recognition or comprehensive fight intelligence. See
+[workflow, configuration, missed-moment evaluation and limitations](docs/MOMENT-COACHING-V01.md).

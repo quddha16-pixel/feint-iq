@@ -83,6 +83,7 @@ export function App({ privateHost = false }: { privateHost?: boolean }) {
     setError,
     importData,
     deleteReport,
+    saveMomentFeedback,
     exportWorkspace,
     clearWorkspace,
     setMessage,
@@ -251,6 +252,7 @@ export function App({ privateHost = false }: { privateHost?: boolean }) {
               frames={frames}
               onRemoveFrame={removeFrame}
               engineAvailable={engine.available}
+              momentDetection={engine.momentDetection}
               onCancel={cancelAnalysis}
               onFrame={setFrame}
               status={status}
@@ -271,6 +273,7 @@ export function App({ privateHost = false }: { privateHost?: boolean }) {
               report={reports.find(
                 (r) => `/report/${encodeURIComponent(r.id)}` === path,
               )}
+              onMomentFeedback={saveMomentFeedback}
             />
           ) : path === "/about" ? (
             <section className="panel">
