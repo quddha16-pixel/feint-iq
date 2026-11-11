@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { referencesFor, referenceIds } from "../src/domain/styles";
 import { boxingMetrics } from "../src/domain/metrics";
-import type { AnalysisConfiguration } from "../src/domain/contracts";
+import {
+  drillSchema,
+  type AnalysisConfiguration,
+} from "../src/domain/contracts";
+import type { ProviderUsage } from "./provider-usage";
 import type { PreparedVideo } from "./media";
 export const findingSchema = z
   .object({
@@ -25,6 +29,17 @@ export const findingSchema = z
     frameIds: z.array(z.string().min(1).max(100)).min(1).max(8),
     polarity: z.enum(["strength", "weakness", "neutral"]),
     correctiveAction: z.string().max(1000).nullable(),
+    coaching: z
+      .object({
+        classification: z.enum(["observation", "hypothesis"]),
+        diagnosis: z.string().min(1).max(2000),
+        consequence: z.string().min(1).max(2000),
+        uncertainty: z.string().min(1).max(2000),
+        priority: z.enum(["high", "medium", "low"]),
+        drill: drillSchema,
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export const providerResultSchema = z
@@ -58,6 +73,7 @@ export interface VideoAnalysisProvider {
     video: PreparedVideo,
     configuration: AnalysisConfiguration,
     signal: AbortSignal,
+    onUsage?: (usage: ProviderUsage) => void,
   ): Promise<ProviderResult>;
 }
 const responseSchema = {

@@ -28,8 +28,10 @@ No legacy data is migrated or deleted.
 The separate existing live pilot remains boxing-only, 25 MiB and 10–300 seconds.
 The new local reviewer can preview up to 1 GiB depending on device/codec support;
 it does not upload. Secure resumable large uploads, shared cloud data, enforced
-cloud retention, cross-angle tracking, replay detection and additional AI
-provider adapters are pending. No premium provider was activated by this work.
+cloud retention, cross-angle tracking, replay detection and other AI providers
+remain pending. A server-only OpenAI short-clip adapter is implemented on this
+provider branch; no premium provider was activated by this work. See
+[OpenAI model selection, test procedure, usage and cost](docs/OPENAI-BOXING-PROVIDER.md).
 
 See [architecture, phases, costs, privacy and recovery](docs/PRIVATE-CAMP-ARCHITECTURE.md).
 

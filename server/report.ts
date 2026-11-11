@@ -53,12 +53,15 @@ export function buildReport(
           {
             id: `recommendation-${i + 1}`,
             title: o.correctiveAction,
-            priority: "secondary" as const,
+            priority:
+              o.coaching?.priority === "high"
+                ? ("primary" as const)
+                : ("secondary" as const),
             observationIds: [`observation-${i + 1}`],
             metricIds: [o.metricId],
-            drills: [],
+            drills: o.coaching ? [o.coaching.drill] : [],
             trainingFocus: [o.finding],
-            tacticalAdjustments: [],
+            tacticalAdjustments: o.coaching ? [o.correctiveAction] : [],
             shortTermGoals: [],
             longTermGoals: [],
           },

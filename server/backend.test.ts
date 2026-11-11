@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBackend } from "./app";
@@ -13,6 +13,10 @@ import {
 import { prepareVideo, run, type PreparedVideo } from "./media";
 import { buildReport } from "./report";
 import { makeReport } from "../tests/fixture";
+import {
+  readAnalysisStream,
+  AnalysisJobFailure,
+} from "../src/services/analysisStream";
 const token = "synthetic-test-session-token-not-for-production";
 const metadata = () => {
   const report = makeReport();
@@ -89,13 +93,26 @@ function form(data: ReturnType<typeof metadata>) {
   );
   return f;
 }
-async function submit(base: string, data = metadata(), key = randomUUID()) {
+async function begin(base: string, data = metadata(), key = randomUUID()) {
   const response = await fetch(base + "/analyses", {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "idempotency-key": key },
     body: form(data),
   });
-  return { response, body: await response.json(), data, key };
+  return { response, data, key };
+}
+async function collect(response: Response) {
+  if (!response.headers.get("content-type")?.includes("application/x-ndjson"))
+    return response.json();
+  const events = (await response.text())
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  return { ...events.at(-1).job, inlineReport: events.at(-1).report, events };
+}
+async function submit(base: string, data = metadata(), key = randomUUID()) {
+  const result = await begin(base, data, key);
+  return { ...result, body: await collect(result.response) };
 }
 async function finish(base: string, id: string) {
   for (let i = 0; i < 100; i++) {
@@ -109,6 +126,41 @@ async function finish(base: string, id: string) {
   throw new Error("Test job did not finish.");
 }
 describe("authenticated live-transport foundation (synthetic provider only)", () => {
+  it("delivers stages and a complete inline report through the frontend parser, including replay", async () => {
+    const analyze = vi.fn(provider.analyze);
+    const base = await start({ provider: { ...provider, analyze } });
+    const data = metadata();
+    const first = await begin(base, data);
+    expect(first.response.status).toBe(200);
+    const stages: string[] = [];
+    const result = await readAnalysisStream(first.response, (job) => {
+      stages.push(job.stage!);
+    });
+    expect(stages).toEqual(["decoding", "analyzing", "validating", "cleaning"]);
+    expect(result.job.status).toBe("completed");
+    expect(result.report.id).toBe(first.key);
+    const replay = await begin(base, data, first.key);
+    expect(await readAnalysisStream(replay.response)).toEqual(result);
+    expect(analyze).toHaveBeenCalledTimes(1);
+  });
+  it("preserves a terminal provider error even though streaming headers already sent HTTP 200", async () => {
+    const base = await start({
+      provider: {
+        ...provider,
+        analyze: async () => {
+          throw new Error("Provider HTTP 403");
+        },
+      },
+    });
+    const { response } = await begin(base);
+    expect(response.status).toBe(200);
+    const failure = await readAnalysisStream(response).catch(
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(AnalysisJobFailure);
+    expect((failure as AnalysisJobFailure).message).toBe("Provider HTTP 403");
+    expect((failure as AnalysisJobFailure).job.status).toBe("failed");
+  });
   it("requires a session token and restricts origins", async () => {
     const base = await start();
     expect((await fetch(base + "/health")).status).toBe(401);
@@ -143,7 +195,7 @@ describe("authenticated live-transport foundation (synthetic provider only)", ()
     const analyze = vi.fn(provider.analyze);
     const base = await start({ provider: { ...provider, analyze } });
     const result = await submit(base);
-    expect(result.response.status).toBe(202);
+    expect(result.response.status).toBe(200);
     const job = await finish(base, result.body.id);
     expect(job.status).toBe("completed");
     const report = await (
@@ -228,16 +280,16 @@ describe("authenticated live-transport foundation (synthetic provider only)", ()
         ),
     };
     const base = await start({ provider: stalled });
-    const result = await submit(base);
-    const canceled = await fetch(`${base}/analyses/${result.body.id}`, {
+    const result = await begin(base);
+    const canceled = await fetch(`${base}/analyses/${result.key}`, {
       method: "DELETE",
       headers: { authorization: `Bearer ${token}` },
     });
     expect(canceled.status).toBe(200);
-    expect((await finish(base, result.body.id)).status).toBe("canceled");
+    expect((await collect(result.response)).status).toBe("canceled");
     expect(
       (
-        await fetch(`${base}/analyses/${result.body.id}/report`, {
+        await fetch(`${base}/analyses/${result.key}/report`, {
           headers: { authorization: `Bearer ${token}` },
         })
       ).status,
@@ -254,12 +306,13 @@ describe("authenticated live-transport foundation (synthetic provider only)", ()
         ),
     };
     const base = await start({ provider: stalled });
-    const first = await submit(base);
+    const first = await begin(base);
     expect((await submit(base)).response.status).toBe(429);
-    await fetch(`${base}/analyses/${first.body.id}`, {
+    await fetch(`${base}/analyses/${first.key}`, {
       method: "DELETE",
       headers: { authorization: `Bearer ${token}` },
     });
+    await collect(first.response);
   });
   it("fails timed-out jobs and invalid evidence without saving a report", async () => {
     const stalled: VideoAnalysisProvider = {
@@ -311,7 +364,7 @@ describe("authenticated live-transport foundation (synthetic provider only)", ()
     await new Promise((r) => setTimeout(r, 5));
     expect(
       (
-        await fetch(`${base}/analyses/${result.body.id}/report`, {
+        await fetch(`${base}/analyses/${result.key}/report`, {
           headers: { authorization: `Bearer ${token}` },
         })
       ).status,
@@ -353,6 +406,36 @@ describe("server-only Gemini adapter", () => {
     });
     expect(String(init[1].body)).toContain("identityIndependentOfPosition");
     expect(String(init[1].body)).toContain("frame-2");
+  });
+  it("fails on free quota exhaustion without retrying, switching models, or exposing the key", async () => {
+    const request = vi.fn(
+      async () => new Response('{"error":"quota exhausted"}', { status: 429 }),
+    );
+    const adapter = new GeminiProvider(
+      "synthetic-key-never-real",
+      undefined,
+      request as typeof fetch,
+    );
+    await expect(
+      adapter.analyze(
+        prepared,
+        metadata().configuration,
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("HTTP 429");
+    expect(request).toHaveBeenCalledTimes(1);
+    const [url, init] = request.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+    );
+    expect(url).not.toContain("synthetic-key-never-real");
+    const body = JSON.parse(String(init.body));
+    expect(body).not.toHaveProperty("tools");
+    expect(body).not.toHaveProperty("cachedContent");
+    expect(body.generationConfig.maxOutputTokens).toBe(8192);
   });
   it("does not substitute mock findings on provider rejection or malformed responses", async () => {
     for (const response of [
@@ -466,4 +549,145 @@ it("maps provider stylistic references to supporting report observations and rej
       new Date().toISOString(),
     ),
   ).toThrow("missing observation");
+});
+it("exposes only a minimal probe while protecting detailed health and every job endpoint", async () => {
+  const base = await start({ provider: undefined });
+  for (let i = 0; i < 65; i++) {
+    const response = await fetch(base + "/livez");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "ok" });
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  }
+  for (const path of [
+    "/health",
+    "/analyses",
+    "/analyses/missing/status",
+    "/analyses/missing/report",
+  ])
+    expect((await fetch(base + path)).status).toBe(401);
+  const detailed = await fetch(base + "/health", {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  expect(detailed.status).toBe(200);
+  expect((await detailed.json()).available).toBe(false);
+});
+it("advertises and enforces an instance-specific upload limit before media processing", async () => {
+  const prepare = vi.fn(async () => prepared);
+  const base = await start({ maxUploadBytes: 1024 * 1024, prepare });
+  const health = await (
+    await fetch(base + "/health", {
+      headers: { authorization: `Bearer ${token}` },
+    })
+  ).json();
+  expect(health.limits.maxBytes).toBe(1024 * 1024);
+  const data = metadata();
+  data.video.size = 1024 * 1024 + 1;
+  const f = new FormData();
+  f.append("metadata", JSON.stringify(data));
+  f.append(
+    "video",
+    new Blob([new Uint8Array(data.video.size)], { type: "video/webm" }),
+    data.video.name,
+  );
+  const response = await fetch(base + "/analyses", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "idempotency-key": randomUUID(),
+    },
+    body: f,
+  });
+  expect(response.status).toBe(413);
+  expect((await response.json()).message).toContain("1 MB");
+  expect(prepare).not.toHaveBeenCalled();
+});
+
+it("keeps the originating request active until the report AND media cleanup are complete", async () => {
+  let release!: (value: ProviderResult) => void;
+  let entered!: () => void;
+  const ready = new Promise<void>((r) => {
+    entered = r;
+  });
+  let directory = "";
+  const base = await start({
+    prepare: async (_, dir) => {
+      directory = dir;
+      return prepared;
+    },
+    provider: {
+      ...provider,
+      analyze: async () => {
+        entered();
+        return new Promise<ProviderResult>((r) => {
+          release = r;
+        });
+      },
+    },
+  });
+  const opened = await begin(base);
+  await ready;
+  const reader = opened.response.body!.getReader();
+  const first = await reader.read();
+  const firstText = new TextDecoder().decode(first.value);
+  expect(firstText).toContain('"type":"job"');
+  expect(firstText).not.toContain('"type":"result"');
+  await expect(access(directory)).resolves.toBeUndefined();
+  release(findings);
+  let text = firstText;
+  while (true) {
+    const next = await reader.read();
+    if (next.done) break;
+    text += new TextDecoder().decode(next.value);
+  }
+  const final = JSON.parse(text.trim().split("\n").at(-1)!);
+  expect(final.type).toBe("result");
+  expect(final.report.id).toBe(opened.key);
+  expect(final.job.status).toBe("completed");
+  await expect(access(directory)).rejects.toThrow();
+});
+it("aborts decoding/provider work when the request disconnects, without persisting a partial report", async () => {
+  let entered!: () => void;
+  const ready = new Promise<void>((r) => {
+    entered = r;
+  });
+  let aborted = false;
+  const base = await start({
+    provider: {
+      ...provider,
+      analyze: async (_, __, signal) => {
+        entered();
+        return new Promise((_, reject) =>
+          signal.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              reject(new Error("Disconnected"));
+            },
+            { once: true },
+          ),
+        );
+      },
+    },
+  });
+  const controller = new AbortController();
+  const key = randomUUID();
+  const data = metadata();
+  const response = await fetch(base + "/analyses", {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "idempotency-key": key },
+    body: form(data),
+    signal: controller.signal,
+  });
+  await ready;
+  controller.abort();
+  await response.text().catch(() => undefined);
+  await expect.poll(() => aborted).toBe(true);
+  expect((await finish(base, key)).status).toBe("canceled");
+  expect(
+    (
+      await fetch(`${base}/analyses/${key}/report`, {
+        headers: { authorization: `Bearer ${token}` },
+      })
+    ).status,
+  ).toBe(409);
 });

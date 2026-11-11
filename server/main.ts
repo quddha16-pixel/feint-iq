@@ -1,16 +1,20 @@
 import { createBackend } from "./app";
 import { run } from "./media";
-import { GeminiProvider } from "./provider";
+import { selectProvider } from "./provider-selection";
 const accessToken = process.env.ANALYSIS_ACCESS_TOKEN ?? "";
 const origin = process.env.FRONTEND_ORIGIN ?? "http://localhost:5173";
-const provider = process.env.GEMINI_API_KEY
-  ? new GeminiProvider(
-      process.env.GEMINI_API_KEY,
-      process.env.GEMINI_MODEL ?? "gemini-3.5-flash-lite",
-    )
-  : undefined;
+const provider = selectProvider();
 await Promise.all([run("ffmpeg", ["-version"]), run("ffprobe", ["-version"])]);
-const app = await createBackend({ accessToken, origin, provider });
+const app = await createBackend({
+  accessToken,
+  origin,
+  provider,
+  // Operational counts only: never log images, prompts, athlete metadata, keys or raw responses.
+  onProviderUsage: (usage, jobId) =>
+    console.log(
+      JSON.stringify({ event: "analysis_provider_usage", jobId, ...usage }),
+    ),
+});
 const stop = async () => {
   await app.close();
   process.exit(0);
