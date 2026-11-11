@@ -27,8 +27,9 @@ test("four-step workflow, validated footage and honest unavailable analysis", as
   ).toHaveAttribute("aria-pressed", "true");
   await page
     .getByRole("main")
-    .getByRole("link", { name: "Use identifierQ", exact: true })
+    .getByRole("link", { name: "Open analysis center", exact: true })
     .click();
+  await page.getByRole("link", { name: "Open existing 25 MiB pilot" }).click();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText(
     "Select a browser-compatible video",
@@ -219,7 +220,18 @@ for (const width of [320, 375, 390, 430, 768, 1440])
   test(`navigation and overflow at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/");
-    for (const path of ["/", "/new", "/history", "/report", "/settings"]) {
+    for (const path of [
+      "/",
+      "/new",
+      "/history",
+      "/report",
+      "/settings",
+      "/analysis",
+      "/profile",
+      "/opponents",
+      "/plan",
+      "/development",
+    ]) {
       await page.goto(`/#${path}`);
       await expect(page.locator("h1")).toBeVisible();
       expect(
@@ -231,12 +243,12 @@ for (const width of [320, 375, 390, 430, 768, 1440])
     await page.goto("/");
     await page
       .getByRole("main")
-      .getByRole("link", { name: "Use identifierQ", exact: true })
+      .getByRole("link", { name: "Open analysis center", exact: true })
       .click();
-    await expect(page).toHaveURL(/#\/new$/);
+    await expect(page).toHaveURL(/#\/analysis$/);
     await page.goBack();
     await expect(
-      page.getByRole("heading", { name: /Every movement/ }),
+      page.getByRole("heading", { name: /Vince’s fight camp/ }),
     ).toBeVisible();
     if (width === 390 || width === 1440)
       await page.screenshot({

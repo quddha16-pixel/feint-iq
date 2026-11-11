@@ -5,7 +5,7 @@ export function Brand() {
     <a className="brand" href="#/" aria-label="Identifier Q dashboard">
       <span className="brand-mark">iQ</span>
       <span>
-        <small>FEINT LABS</small>
+        <small>FEINT ENGINEERING</small>
         <strong>
           IDENTIFIER <b>Q</b>
         </strong>

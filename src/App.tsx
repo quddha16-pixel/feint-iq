@@ -3,35 +3,46 @@ import {
   Activity,
   ArrowUpRight,
   CircleHelp,
-  FileBarChart2,
   LayoutDashboard,
   Plus,
   Settings2,
   UserRound,
-  Info,
+  CalendarDays,
+  Crosshair,
+  Users,
 } from "lucide-react";
 import type { Discipline } from "./domain/metrics";
 import { useWorkspace } from "./state/useWorkspace";
 import { WorkspaceGuide } from "./components/WorkspaceGuide";
-import { Dashboard } from "./components/Dashboard";
+import { Overview } from "./camp/Overview";
+import { Profile } from "./camp/Profile";
+import { Opponents } from "./camp/Opponents";
+import { Plan } from "./camp/Plan";
+import { Development } from "./camp/Development";
+import { AnalysisCenter } from "./camp/AnalysisCenter";
+import { CampBackup } from "./camp/Backup";
+import { useCamp } from "./camp/useCamp";
 import { Workflow } from "./components/Workflow";
 import { Report } from "./components/Report";
 import { History } from "./components/History";
-import { About } from "./components/About";
+
 import { Settings } from "./components/Settings";
 import { Brand, Notice } from "./components/ui";
 const nav = [
-  { path: "/", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/new", label: "Use identifierQ", icon: Plus },
-  { path: "/history", label: "Analysis history", icon: Activity },
-  { path: "/report", label: "Analysis report", icon: FileBarChart2 },
-  { path: "/about", label: "About Feint Labs", icon: Info },
+  { path: "/", label: "Camp overview", icon: LayoutDashboard },
+  { path: "/analysis", label: "Analysis center", icon: Plus },
+  { path: "/profile", label: "Vince’s profile", icon: UserRound },
+  { path: "/opponents", label: "Opponents", icon: Users },
+  { path: "/plan", label: "Camp plan", icon: CalendarDays },
+  { path: "/development", label: "Development", icon: Crosshair },
+  { path: "/history", label: "Report library", icon: Activity },
   { path: "/settings", label: "Settings", icon: Settings2 },
 ];
 function route() {
   return location.hash.replace(/^#/, "") || "/";
 }
-export function App() {
+export function App({ privateHost = false }: { privateHost?: boolean }) {
+  const camp = useCamp();
   const [path, setPath] = useState(route);
   const [help, setHelp] = useState(false);
   useEffect(() => {
@@ -93,7 +104,7 @@ export function App() {
       </a>
       <aside className="sidebar">
         <Brand />
-        <div className="workspace-label">PERFORMANCE WORKSPACE</div>
+        <div className="workspace-label">PRIVATE FIGHT CAMP</div>
         <nav aria-label="Main navigation">
           {nav.map((n) => (
             <a
@@ -133,7 +144,7 @@ export function App() {
             <CircleHelp size={18} /> Workspace guide <ArrowUpRight size={15} />
           </button>
           <div className="sidebar-signature">
-            FEINT LABS<span>PRECISION. PERSPECTIVE. PROGRESS.</span>
+            FEINT ENGINEERING<span>COACHING. EVIDENCE. DEVELOPMENT.</span>
           </div>
         </div>
       </aside>
@@ -145,7 +156,14 @@ export function App() {
             </span>
             <span>Workspace</span>
             <span className="slash">/</span>
-            <strong>{current?.label ?? "Page not found"}</strong>
+            <strong>
+              {current?.label ??
+                (path === "/new"
+                  ? "Video analysis setup"
+                  : path.startsWith("/report")
+                    ? "Analysis report"
+                    : "Workspace")}
+            </strong>
           </div>
           <div className="header-controls">
             <div
@@ -190,13 +208,34 @@ export function App() {
           {message && (
             <Notice onDismiss={() => setMessage("")}>{message}</Notice>
           )}
+          <div className="local-boundary">
+            <span className="live-dot" />{" "}
+            {privateHost
+              ? "Private host verified · device-only records · shared storage not enabled"
+              : "Local development · device-only records · private hosting not enabled"}
+          </div>
+          {camp.error && <Notice tone="error">{camp.error}</Notice>}
+          {camp.message && (
+            <Notice onDismiss={() => camp.setMessage("")}>
+              {camp.message}
+            </Notice>
+          )}
           {path === "/" ? (
-            <Dashboard
-              discipline={preferences.discipline}
-              engine={engine}
+            <Overview data={camp.data} reports={reports} />
+          ) : path === "/analysis" ? (
+            <AnalysisCenter
+              data={camp.data}
+              commit={camp.commit}
               reports={reports}
-              hasDraft={!!draft.fighterName}
             />
+          ) : path === "/profile" ? (
+            <Profile data={camp.data} commit={camp.commit} />
+          ) : path === "/opponents" ? (
+            <Opponents data={camp.data} commit={camp.commit} />
+          ) : path === "/plan" ? (
+            <Plan data={camp.data} commit={camp.commit} />
+          ) : path === "/development" ? (
+            <Development data={camp.data} commit={camp.commit} />
           ) : path === "/new" ? (
             <Workflow
               draft={draft}
@@ -234,18 +273,68 @@ export function App() {
               )}
             />
           ) : path === "/about" ? (
-            <About />
+            <section className="panel">
+              <h1>Feint Engineering · Identifier Q</h1>
+              <p>
+                A coaching workspace for Vince and his coach. Review actual
+                evidence, document uncertainty, and keep coaching decisions
+                human.
+              </p>
+              <a className="quiet-link" href="#/">
+                Return to camp overview ↗
+              </a>
+            </section>
           ) : path === "/settings" ? (
-            <Settings
-              preferences={preferences}
-              onSave={savePreferences}
-              onClear={clearWorkspace}
-              onExport={exportWorkspace}
-              engine={engine}
-              onConnect={connectEngine}
-              onDisconnect={disconnectEngine}
-              busy={submitting.current}
-            />
+            <>
+              <CampBackup data={camp.data} commit={camp.commit} />
+              <section className="panel">
+                <h2>Hosting & capability status</h2>
+                <p>
+                  This local workspace is not an authenticated production
+                  service. Public GitHub Pages is unsuitable for private camp
+                  data. The prepared identity gateway must protect all
+                  application assets and endpoints before remote use.
+                </p>
+                <p>
+                  OpenAI, Anthropic, xAI and Gemini comparisons, secure 1 GB
+                  uploads, cloud retention and shared storage remain pending. No
+                  premium provider has been activated by this rebuild.
+                </p>
+                <label>
+                  Planned cloud footage retention
+                  <select
+                    value={camp.data.camp.retentionDays}
+                    onChange={(e) =>
+                      camp.commit({
+                        ...camp.data,
+                        camp: {
+                          ...camp.data.camp,
+                          retentionDays: e.target.value as "7" | "30" | "90",
+                        },
+                      })
+                    }
+                  >
+                    <option value="7">7 days</option>
+                    <option value="30">30 days</option>
+                    <option value="90">90 days</option>
+                  </select>
+                </label>
+                <p className="subtle-note">
+                  Planning preference only. No server deletion policy or cloud
+                  footage storage is enabled. Local videos remain session-only.
+                </p>
+              </section>
+              <Settings
+                preferences={preferences}
+                onSave={savePreferences}
+                onClear={clearWorkspace}
+                onExport={exportWorkspace}
+                engine={engine}
+                onConnect={connectEngine}
+                onDisconnect={disconnectEngine}
+                busy={submitting.current}
+              />
+            </>
           ) : (
             <section className="panel not-found">
               <h1>Page not found.</h1>
@@ -259,7 +348,11 @@ export function App() {
       </div>
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {nav
-          .filter((n) => n.path !== "/report" && n.path !== "/about")
+          .filter((n) =>
+            ["/", "/analysis", "/opponents", "/plan", "/settings"].includes(
+              n.path,
+            ),
+          )
           .map((n) => (
             <a
               key={n.path}

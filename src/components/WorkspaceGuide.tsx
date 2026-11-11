@@ -48,7 +48,7 @@ export function WorkspaceGuide({ onClose }: { onClose: () => void }) {
       <h2 id="guide-title">Start with your footage.</h2>
       <ol>
         <li>Choose Boxing or Kickboxing in the header.</li>
-        <li>Open New analysis and select a compatible video.</li>
+        <li>Open Analysis center for local session review, or its existing pilot setup for small clips.</li>
         <li>Identify your fighter and choose your technical focus.</li>
         <li>
           Review the setup. Automated analysis is unavailable until an engine is
@@ -57,7 +57,7 @@ export function WorkspaceGuide({ onClose }: { onClose: () => void }) {
       </ol>
       <p>
         Authentic structured reports can be imported in History. Your library is
-        local to this browser.
+        local to this browser. Profile, camp plan, opponents and Development are available from the camp navigation.
       </p>
       <button className="button" onClick={dismiss}>
         Got it

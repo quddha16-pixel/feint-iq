@@ -31,7 +31,7 @@ try {
   if (response?.status() !== 200)
     throw new Error(`Site returned HTTP ${response?.status()}`);
   await page
-    .getByRole("heading", { name: /Every movement tells a story/ })
+    .getByRole("heading", { name: /Vince’s fight camp/ })
     .waitFor({ timeout: 10000 });
   const html = await response.text();
   if (!html.includes("/feint-iq/assets/"))
@@ -47,10 +47,10 @@ try {
     throw new Error(`Asset requests failed: ${JSON.stringify(assets)}`);
   await page
     .getByRole("main")
-    .getByRole("link", { name: "Use identifierQ", exact: true })
+    .getByRole("link", { name: "Open analysis center", exact: true })
     .click();
   await page
-    .getByRole("heading", { name: "Upload footage", exact: true })
+    .getByRole("heading", { name: "Study the round.", exact: true })
     .waitFor();
   for (const path of ["/history", "/report", "/settings", "/about", "/"]) {
     await page.goto(`${target.href}#${path}`);
@@ -60,7 +60,7 @@ try {
   }
   await page.reload();
   await page
-    .getByRole("heading", { name: /Every movement tells a story/ })
+    .getByRole("heading", { name: /Vince’s fight camp/ })
     .waitFor();
   if (errors.length) throw new Error(`JavaScript errors: ${errors.join("; ")}`);
   console.log(

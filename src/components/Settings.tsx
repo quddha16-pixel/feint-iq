@@ -87,8 +87,8 @@ export function Settings({
               />
             </label>
             <p className="subtle-note">
-              Default: 500 MB. Large files can exceed device memory. The pilot
-              backend enforces a separate 100 MB upload limit.
+              Default: 500 MB. Large files can exceed device memory. The live
+              backend enforces a separate 25 MiB upload limit.
             </p>
             {error && <Notice tone="error">{error}</Notice>}
             {saved && (
@@ -163,7 +163,7 @@ export function Settings({
         </section>
         <section className="panel">
           <a className="quiet-link" href="#/about">
-            About Feint Labs →
+            About the coaching workspace →
           </a>
           <ShieldCheck className="blue" size={26} />
           <h2>Evidence is the standard.</h2>

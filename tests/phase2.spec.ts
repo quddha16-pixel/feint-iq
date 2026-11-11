@@ -54,7 +54,7 @@ test.afterAll(async () => {
   await backend.close();
 });
 for (const width of [320, 390, 1440])
-  test(`Feint Labs branding, about page, and compact layout at ${width}`, async ({
+  test(`Feint Engineering branding, coaching context, and compact layout at ${width}`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 900 });
@@ -65,16 +65,16 @@ for (const width of [320, 390, 1440])
     await expect(
       page
         .getByRole("main")
-        .getByRole("link", { name: "Use identifierQ", exact: true }),
+        .getByRole("link", { name: "Open analysis center", exact: true }),
     ).toBeVisible();
     await page.goto("/#/about");
     await expect(
       page.getByRole("heading", {
-        name: "A clearer view of combat performance.",
+        name: "Feint Engineering · Identifier Q",
       }),
     ).toBeVisible();
     await expect(
-      page.getByText(/Quentin Warminsky, an undefeated combat sports coach/),
+      page.getByText(/A coaching workspace for Vince and his coach/),
     ).toBeVisible();
     expect(
       await page.evaluate(

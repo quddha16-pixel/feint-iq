@@ -4,6 +4,7 @@ import { makeReport } from "./fixture";
 test("main screens and populated report meet automated WCAG 2.1 AA checks", async ({
   page,
 }) => {
+  test.setTimeout(90000);
   await page.goto("/");
   for (const path of [
     "/",
@@ -12,6 +13,11 @@ test("main screens and populated report meet automated WCAG 2.1 AA checks", asyn
     "/report",
     "/settings",
     "/about",
+    "/analysis",
+    "/profile",
+    "/opponents",
+    "/plan",
+    "/development",
   ]) {
     await page.goto(`/#${path}`);
     const result = await new AxeBuilder({ page })
